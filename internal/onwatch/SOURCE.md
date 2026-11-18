@@ -11,7 +11,8 @@ fixtures only, never deployed onWatch or provider accounts.
 - [Antigravity](https://github.com/onllm-dev/onWatch/blob/dcc803348ef089068470214bf7556454656b6ace/internal/web/handlers.go#L9521-L9605), [CLI bucket rows](https://github.com/onllm-dev/onWatch/blob/dcc803348ef089068470214bf7556454656b6ace/internal/web/handlers.go#L9626-L9676): modelId is bucket identity, usagePercent used, resetTime optional. Never use display-card remaining.
 
 Supported providers: anthropic, codex, opencode, antigravity, minimax,
-synthetic, zai, openrouter. Other
+synthetic, zai, openrouter, gemini, copilot, cursor, ollama, commandcode,
+muse, mistral. Other
 enabled providers return explicit unsupported errors, not fabricated healthy
 samples. Other shapes remain pending #3. Explicit paused/authRequired/isStale
 flags and wholly empty quota results fail the observation rather than
@@ -26,3 +27,11 @@ zero utilization; valid finite sibling counters are preserved.
 - [MiniMax](https://github.com/onllm-dev/onWatch/blob/dcc803348ef089068470214bf7556454656b6ace/internal/web/handlers.go#L10525-L10650), [account usage endpoint](https://github.com/onllm-dev/onWatch/blob/dcc803348ef089068470214bf7556454656b6ace/internal/web/handlers.go#L10478-L10501): accounts array, grouped daily/weekly quotas in one list, total/used/usagePercent/resetAt. Do not duplicate weeklyQuotas.
 Raw window identities preserved; no routing, credentials, raw response or
 account logs, no redirect following.
+
+## Additional provider shapes
+
+- [Gemini](https://github.com/onllm-dev/onWatch/blob/dcc803348ef089068470214bf7556454656b6ace/internal/web/gemini_handlers.go#L19-L74): family modelId, usagePercent, resetTime. Do not mix with AGY buckets.
+- [Copilot](https://github.com/onllm-dev/onWatch/blob/dcc803348ef089068470214bf7556454656b6ace/internal/web/handlers.go#L8806-L8860): entitlement minus remaining yields finite used; skip unlimited/non-finite rows, use resetDate.
+- [Cursor](https://github.com/onllm-dev/onWatch/blob/dcc803348ef089068470214bf7556454656b6ace/internal/web/cursor_handlers.go#L191-L280), [Ollama](https://github.com/onllm-dev/onWatch/blob/dcc803348ef089068470214bf7556454656b6ace/internal/web/ollama_handlers.go#L177-L272), [Command Code](https://github.com/onllm-dev/onWatch/blob/dcc803348ef089068470214bf7556454656b6ace/internal/web/commandcode_handlers.go#L174-L265), [Muse](https://github.com/onllm-dev/onWatch/blob/dcc803348ef089068470214bf7556454656b6ace/internal/web/muse_handlers.go#L198-L285), [Mistral](https://github.com/onllm-dev/onWatch/blob/dcc803348ef089068470214bf7556454656b6ace/internal/web/mistral_handlers.go#L16-L69): name/utilization/resetsAt, format-specific absolute counters only when finite. Percent rows remain utilization-only; unknown cap or unlimited is not zero usage. Muse cliActive and Mistral reconnect/stale/waiting are unavailable.
+
+Unsupported by the Snapshot contract at this pin: [DeepSeek](https://github.com/onllm-dev/onWatch/blob/dcc803348ef089068470214bf7556454656b6ace/internal/web/deepseek_handlers.go#L18-L79) and [Moonshot](https://github.com/onllm-dev/onWatch/blob/dcc803348ef089068470214bf7556454656b6ace/internal/web/moonshot_handlers.go#L17-L70) expose balances without a finite usage denominator; [Grok](https://github.com/onllm-dev/onWatch/blob/dcc803348ef089068470214bf7556454656b6ace/internal/web/handlers.go#L2570-L2657) and [Kimi](https://github.com/onllm-dev/onWatch/blob/dcc803348ef089068470214bf7556454656b6ace/internal/web/kimi_handlers.go#L42-L120) initialize capturedAt to response build time and do not replace it with the stored snapshot timestamp. Do not fake utilization or freshness. Unknown providers fail explicitly. Remaining concern: provider visibility and selection policy must ensure supported telemetry can coexist with unsupported providers without silently dropping required observations; do not enable steering until registry and freshness policy are reviewed.

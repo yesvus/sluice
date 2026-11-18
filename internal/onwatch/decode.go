@@ -18,7 +18,8 @@ var (
 
 func supported(provider string) bool {
 	switch provider {
-	case "anthropic", "codex", "opencode", "antigravity", "minimax", "synthetic", "zai", "openrouter":
+	case "anthropic", "codex", "opencode", "antigravity", "minimax", "synthetic", "zai", "openrouter",
+		"gemini", "copilot", "cursor", "ollama", "commandcode", "muse", "mistral":
 		return true
 	default:
 		return false
@@ -32,6 +33,8 @@ type providerResponse struct {
 	Paused       bool       `json:"paused"`
 	AuthRequired bool       `json:"authRequired"`
 	IsStale      bool       `json:"isStale"`
+	CLIActive    bool       `json:"cliActive"`
+	Status       string     `json:"status"`
 }
 
 type quotaRow struct {
@@ -48,6 +51,12 @@ type quotaRow struct {
 	ResetsAt      *time.Time `json:"resetsAt"`
 	ResetTime     *time.Time `json:"resetTime"`
 	LastUpdatedAt *time.Time `json:"lastUpdatedAt"`
+	ResetDate     *time.Time `json:"resetDate"`
+	Entitlement   *float64   `json:"entitlement"`
+	Remaining     *float64   `json:"remaining"`
+	Unlimited     *bool      `json:"unlimited"`
+	LimitUnknown  bool       `json:"limitUnknown"`
+	Format        string     `json:"format"`
 }
 
 func decodeProvider(provider string, data json.RawMessage, requireAccount bool) ([]quota.Snapshot, error) {
@@ -58,7 +67,8 @@ func decodeProvider(provider string, data json.RawMessage, requireAccount bool) 
 	if !supported(provider) || json.Unmarshal(data, &response) != nil || response.CapturedAt == nil || response.CapturedAt.IsZero() || response.Quotas == nil {
 		return nil, errSchema
 	}
-	if response.Paused || response.AuthRequired || response.IsStale || len(response.Quotas) == 0 {
+	if response.Paused || response.AuthRequired || response.IsStale || response.CLIActive || len(response.Quotas) == 0 ||
+		(provider == "mistral" && (response.Status == "reconnect" || response.Status == "stale" || response.Status == "waiting")) {
 		return nil, errUnavailable
 	}
 	account := ""
@@ -75,11 +85,26 @@ func decodeProvider(provider string, data json.RawMessage, requireAccount bool) 
 	windows := make(map[string]bool)
 	for _, row := range response.Quotas {
 		window, percent, resets := row.Name, row.Utilization, row.ResetsAt
-		if provider == "antigravity" {
+		if provider == "antigravity" || provider == "gemini" {
 			window, percent, resets = row.ModelID, row.UsagePercent, row.ResetTime
 		}
 		if provider == "minimax" {
 			percent, resets = row.UsagePercent, row.ResetAt
+		}
+		if provider == "copilot" {
+			percent, resets = row.UsagePercent, row.ResetDate
+			if row.Unlimited == nil || row.Entitlement == nil || row.Remaining == nil || *row.Entitlement < 0 || *row.Remaining < 0 {
+				return nil, errSchema
+			}
+			if *row.Unlimited || *row.Entitlement == 0 {
+				continue
+			}
+			if *row.Remaining > *row.Entitlement {
+				return nil, errSchema
+			}
+		}
+		if row.LimitUnknown && (provider == "ollama" || provider == "commandcode") {
+			continue
 		}
 		if row.IsStale {
 			return nil, errUnavailable
@@ -117,7 +142,29 @@ func decodeProvider(provider string, data json.RawMessage, requireAccount bool) 
 			}
 			s.Used, s.Limit = row.Used, row.Total
 		}
+		if provider == "copilot" {
+			used := *row.Entitlement - *row.Remaining
+			s.Used, s.Limit = &used, row.Entitlement
+		}
+		switch provider {
+		case "cursor", "ollama", "commandcode", "muse", "mistral":
+			switch row.Format {
+			case "percent":
+				// These providers may expose derived percent/100 counters.
+				// Preserve utilization, not fabricated absolute usage.
+			case "currency", "dollars", "credits", "count":
+				if row.Used == nil || row.Limit == nil || *row.Used < 0 || *row.Limit <= 0 {
+					return nil, errUnavailable
+				}
+				s.Used, s.Limit = row.Used, row.Limit
+			default:
+				return nil, errSchema
+			}
+		}
 		out = append(out, s)
+	}
+	if len(out) == 0 {
+		return nil, errUnavailable
 	}
 	return out, nil
 }

@@ -1,0 +1,19 @@
+{
+  "capturedAt": "2026-01-01T10:00:00Z",
+  "quotas": [
+    {
+      "name": "synthetic-percent",
+      "utilization": 20,
+      "format": "percent",
+      "used": 20,
+      "limit": 100
+    },
+    {
+      "name": "synthetic-count",
+      "utilization": 40,
+      "format": "count",
+      "used": 4,
+      "limit": 10
+    }
+  ]
+}

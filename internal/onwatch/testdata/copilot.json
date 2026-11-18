@@ -1,0 +1,20 @@
+{
+  "capturedAt": "2026-01-01T10:00:00Z",
+  "quotas": [
+    {
+      "name": "synthetic-premium",
+      "unlimited": false,
+      "entitlement": 100,
+      "remaining": 70,
+      "usagePercent": 30,
+      "resetDate": "2026-01-01T15:00:00Z"
+    },
+    {
+      "name": "synthetic-unlimited",
+      "unlimited": true,
+      "entitlement": 0,
+      "remaining": 0,
+      "usagePercent": 0
+    }
+  ]
+}
