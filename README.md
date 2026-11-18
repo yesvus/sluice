@@ -43,3 +43,7 @@ onWatch runs separately, under the operator's own credentials, and is not bundle
 ## Contributing
 
 See [`AGENTS.md`](AGENTS.md) for scope rules and process. Issue forms, contribution guidance and the security policy come from [`yesvus/.github`](https://github.com/yesvus/.github).
+
+## License
+
+[Apache-2.0](LICENSE)
