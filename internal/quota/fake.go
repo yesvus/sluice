@@ -11,6 +11,8 @@ type FakeSource struct {
 	Snapshots   []Snapshot
 }
 
+var _ Source = (*FakeSource)(nil)
+
 // Health returns HealthFunc's result when set, otherwise nil.
 func (f *FakeSource) Health(ctx context.Context) error {
 	if f.HealthFunc != nil {
