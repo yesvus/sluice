@@ -34,7 +34,7 @@ type Registry struct {
 	accounts []Account
 }
 
-// New returns a registry holding a copy of accounts; Load validates configuration.
+// New returns a registry holding a copy of accounts. It does not validate; use Load for validated configuration.
 func New(accounts []Account) *Registry {
 	return &Registry{accounts: cloneAccounts(accounts)}
 }
