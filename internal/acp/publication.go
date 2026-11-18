@@ -50,6 +50,7 @@ func (s *publicationStream) Write(p []byte) (int, error) {
 			return 0, errInvalidSession
 		}
 		if len(s.pending) >= maxStartupUpdates || s.size+len(p) > maxStartupBytes {
+			_ = s.ReadWriteCloser.Close()
 			return 0, errStartupUpdates
 		}
 		s.pending = append(s.pending, append([]byte(nil), p...))

@@ -64,11 +64,11 @@ func runRelay(ctx context.Context, client io.ReadWriteCloser, profile string, al
 		reason = "backend_error"
 	}
 	cancel()
+	_ = r.front.Close()
 	r.mu.Lock()
 	r.closing = true
 	startDone := r.startDone
 	r.mu.Unlock()
-	_ = r.front.Close()
 	if startDone != nil {
 		<-startDone
 	}
@@ -277,18 +277,18 @@ func (r *relay) openSession(ctx context.Context, b Backend, init, params json.Ra
 		return nil, errInvalidSession
 	}
 	raw, err := peer.call(ctx, "session/new", params)
+	early.mu.Lock()
+	invalid := early.invalid
+	early.mu.Unlock()
+	if invalid {
+		return nil, errInvalidSession
+	}
 	if err != nil {
 		return nil, err
 	}
 	projected, id, err := projectSession(raw, b.Model)
 	if err != nil {
 		return nil, err
-	}
-	early.mu.Lock()
-	invalid := early.invalid
-	early.mu.Unlock()
-	if invalid {
-		return nil, errInvalidSession
 	}
 	keep = true
 	return &activeSession{peer: peer, id: id, response: projected, model: b.Model, early: early}, nil

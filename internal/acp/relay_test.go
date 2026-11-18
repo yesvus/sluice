@@ -24,7 +24,7 @@ func TestRelayFakeBackend(t *testing.T) {
 	var dials atomic.Int32
 	var prompts atomic.Int32
 	cancelled := make(chan struct{}, 1)
-	updates := make(chan json.RawMessage, 1)
+	updates := make(chan json.RawMessage, 4)
 	dial := func(_ context.Context, b Backend) (io.ReadWriteCloser, error) {
 		dials.Add(1)
 		parent, child := net.Pipe()
@@ -37,9 +37,17 @@ func TestRelayFakeBackend(t *testing.T) {
 				return json.RawMessage(`{"protocolVersion":1}`), nil
 			case "session/new":
 				if b.ID == "first" {
+					if err := fake.notify(ctx, "session/update", json.RawMessage(`{"sessionId":"rejected-session","update":{"sessionUpdate":"available_commands_update","availableCommands":[]}}`)); err != nil {
+						return nil, protocolError(err)
+					}
 					return nil, &sdk.RequestError{Code: -32603, Message: "usage limit"}
 				}
+				if err := fake.notify(ctx, "session/update", json.RawMessage(`{"sessionId":"synthetic-session","update":{"sessionUpdate":"available_commands_update","availableCommands":[]}}`)); err != nil {
+					return nil, protocolError(err)
+				}
 				return json.RawMessage(`{"sessionId":"synthetic-session","models":{"currentModelId":"example-b","availableModels":[{"modelId":"example-b","name":"B"},{"modelId":"other","name":"Other"}]}}`), nil
+			case "session/set_config_option":
+				return json.RawMessage(`{"configOptions":[{"id":"model","category":"model","type":"select","currentValue":"observed-drift","options":[{"value":"other","name":"Other"}]}]}`), nil
 			case "session/prompt":
 				if prompts.Add(1) == 2 {
 					return nil, &sdk.RequestError{Code: -32603, Message: "usage limit"}
@@ -97,6 +105,18 @@ func TestRelayFakeBackend(t *testing.T) {
 	session, err := client.call(ctx, "session/new", json.RawMessage(`{"cwd":"/synthetic","mcpServers":[]}`))
 	if err != nil || strings.Contains(string(session), "other") || !strings.Contains(string(session), "example-b") || dials.Load() != 2 {
 		t.Fatalf("session=%s dials=%d err=%v", session, dials.Load(), err)
+	}
+	select {
+	case update := <-updates:
+		if sessionID(update) != "synthetic-session" || !strings.Contains(string(update), "available_commands_update") {
+			t.Fatal("wrong startup notification forwarded")
+		}
+	case <-ctx.Done():
+		t.Fatal("startup notification lost")
+	}
+	config, err := client.call(ctx, "session/set_config_option", json.RawMessage(`{"sessionId":"synthetic-session","configId":"model","value":"observed-drift"}`))
+	if err != nil || strings.Contains(string(config), "other") || !strings.Contains(string(config), "observed-drift") || !strings.Contains(string(config), "example-b") {
+		t.Fatalf("dynamic config projection: %s %v", config, err)
 	}
 	prompt := json.RawMessage(`{"sessionId":"synthetic-session","prompt":[{"type":"text","text":"synthetic prompt"}]}`)
 	result, err := client.call(ctx, "session/prompt", prompt)
