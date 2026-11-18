@@ -7,6 +7,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	sdk "github.com/coder/acp-go-sdk"
 )
 
 var (
@@ -40,10 +42,22 @@ func WriteAudit(w io.Writer, a Audit) error {
 }
 
 func usageLimit(err error, patterns []string) bool {
-	if err == nil {
+	var rpc *sdk.RequestError
+	if !errors.As(err, &rpc) || rpc == nil {
 		return false
 	}
-	message := strings.ToLower(err.Error())
+	// The SDK wraps local transport/disconnect/decode failures in standard
+	// JSON-RPC errors with arbitrary Data. Never scan Error() or Data.
+	// Only an explicit backend error message can indicate startup quota.
+	switch rpc.Code {
+	case -32700, -32600, -32601, -32602, -32000, -32800:
+		return false
+	}
+	message := strings.ToLower(strings.TrimSpace(rpc.Message))
+	switch message {
+	case "", "internal error", "parse error", "invalid request", "method not found", "invalid params", "authentication required", "request cancelled":
+		return false
+	}
 	for _, p := range patterns {
 		p = strings.ToLower(strings.TrimSpace(p))
 		if p != "" && strings.Contains(message, p) {

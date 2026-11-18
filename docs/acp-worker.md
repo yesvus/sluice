@@ -75,7 +75,10 @@ profiles:
 
 1. **Pilot (static).** Use the first backend whose start succeeds. If a
    backend answers with a usage-limit error at session start, try the next.
-   Usage-limit detection is pattern based (ACP has no quota error code; prior
+   Usage-limit detection matches the explicit JSON-RPC error message only;
+   generic SDK errors, error data, invalid requests, authentication and
+   cancellation cannot trigger fallback. Real provider message patterns
+   remain unverified. Detection is pattern based (ACP has no quota error code; prior
    art: [acp2api](https://github.com/neprel/acp2api) `limitPatterns`).
 2. **With onWatch.** Before `session/new`, read headroom and reset time for
    each backend's `account_id` from onWatch and skip a backend that is near its

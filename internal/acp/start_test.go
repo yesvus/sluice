@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	sdk "github.com/coder/acp-go-sdk"
 )
 
 func TestChooseAtStart(t *testing.T) {
@@ -20,8 +22,13 @@ func TestChooseAtStart(t *testing.T) {
 		wantErr  bool
 	}{
 		{"first succeeds", nil, []string{"first"}, "first", false},
-		{"quota fallback", errors.New("USAGE LIMIT reached"), []string{"first", "second"}, "second", false},
+		{"quota fallback", &sdk.RequestError{Code: -32603, Message: "USAGE LIMIT reached"}, []string{"first", "second"}, "second", false},
 		{"non quota fails closed", errors.New("model mismatch"), []string{"first"}, "", true},
+		{"local quota text", errors.New("usage limit"), []string{"first"}, "", true},
+		{"SDK internal error data", sdk.NewInternalError(map[string]string{"error": "usage limit"}), []string{"first"}, "", true},
+		{"invalid params message", &sdk.RequestError{Code: -32602, Message: "usage limit"}, []string{"first"}, "", true},
+		{"auth message", &sdk.RequestError{Code: -32000, Message: "usage limit"}, []string{"first"}, "", true},
+		{"cancelled message", &sdk.RequestError{Code: -32800, Message: "usage limit"}, []string{"first"}, "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var calls []string
@@ -43,7 +50,7 @@ func TestChooseAtStartExhaustedAndCancelled(t *testing.T) {
 	calls := 0
 	start := func(_ context.Context, _ Backend) (string, error) {
 		calls++
-		return "", errors.New("usage limit")
+		return "", &sdk.RequestError{Code: -32603, Message: "usage limit"}
 	}
 	allowed := []Backend{{ID: "first"}, {ID: "second"}}
 	_, _, err := chooseAtStart(context.Background(), allowed, []string{"usage limit"}, start)
@@ -84,5 +91,11 @@ func TestWriteAudit(t *testing.T) {
 	a.EndReason = "arbitrary raw error"
 	if err := WriteAudit(&buf, a); err == nil || buf.Len() != 0 {
 		t.Fatal("unbounded end reason must not be written")
+	}
+}
+
+func TestUsageLimitIgnoresGenericSDKMessage(t *testing.T) {
+	if usageLimit(sdk.NewInternalError(map[string]string{"error": "usage limit"}), []string{"internal error", "usage limit"}) {
+		t.Fatal("generic SDK error must not trigger fallback")
 	}
 }

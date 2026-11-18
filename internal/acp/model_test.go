@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	sdk "github.com/coder/acp-go-sdk"
 )
 
 type fakeModelBackend struct {
@@ -53,7 +55,7 @@ func TestStartPinnedQuotaFallback(t *testing.T) {
 	session := &fakeModelBackend{model: "example-b"}
 	b, got, err := startPinned(context.Background(), allowed, []string{"usage limit"}, func(_ context.Context, b Backend) (*fakeModelBackend, error) {
 		if b.ID == "first" {
-			return nil, errors.New("usage limit")
+			return nil, &sdk.RequestError{Code: -32603, Message: "usage limit"}
 		}
 		return session, nil
 	})
