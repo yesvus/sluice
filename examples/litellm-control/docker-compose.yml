@@ -2,7 +2,7 @@ name: sluice-litellm-control
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.16-alpine3.24
     environment:
       POSTGRES_USER: litellm
       POSTGRES_PASSWORD: litellm
@@ -14,7 +14,7 @@ services:
       retries: 20
 
   fake-upstream:
-    image: python:3.13-alpine
+    image: python:3.13.18-alpine3.24
     command: ["python", "/app/fake_upstream.py"]
     volumes:
       - ./fake_upstream.py:/app/fake_upstream.py:ro
