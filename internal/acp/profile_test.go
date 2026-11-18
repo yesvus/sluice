@@ -17,6 +17,7 @@ const exampleProfile = `profiles:
         account_id: synthetic-first
       - id: synthetic-opencode
         command: [/opt/bin/opencode, acp]
+        home: /private/worker-opencode
         config: managed
         model: example/example-b
         account_id: synthetic-second
@@ -36,6 +37,8 @@ func TestDecodeProfile(t *testing.T) {
 		{"duplicate account", "account_id: synthetic-second", "account_id: synthetic-first"},
 		{"shell command", "command: [codex-acp]", "command: [sh, -c, example]"},
 		{"relative home", "home: /private/worker-codex", "home: ../other"},
+		{"overlapping homes", "home: /private/worker-opencode", "home: /private/worker-codex/subdir"},
+		{"missing OpenCode home", "home: /private/worker-opencode", "home: \"\""},
 		{"global config", "config: managed", "config: global"},
 		{"extra arg", "command: [/opt/bin/opencode, acp]", "command: [/opt/bin/opencode, acp, --extra]"},
 		{"unknown key", "effort: high", "effort: high\n        secret: synthetic"},

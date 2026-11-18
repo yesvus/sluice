@@ -81,6 +81,7 @@ func (p Profile) validate() error {
 	ids := map[string]bool{}
 	kinds := map[string]bool{}
 	accounts := map[string]bool{}
+	homes := []string{}
 	for _, b := range p.Backends {
 		if !safeID.MatchString(b.ID) || !safeModel.MatchString(b.Model) || ids[b.ID] || len(b.Command) == 0 {
 			return errProfile
@@ -90,6 +91,16 @@ func (p Profile) validate() error {
 			return errProfile
 		}
 		kind := filepath.Base(executable)
+		// Both official CLIs require a pre-provisioned profile-specific home.
+		if !filepath.IsAbs(b.Home) || filepath.Clean(b.Home) != b.Home || b.Home == "/" {
+			return errProfile
+		}
+		for _, home := range homes {
+			if b.Home == home || strings.HasPrefix(b.Home, home+string(filepath.Separator)) || strings.HasPrefix(home, b.Home+string(filepath.Separator)) {
+				return errProfile
+			}
+		}
+		homes = append(homes, b.Home)
 		if kinds[kind] {
 			return errProfile
 		}
@@ -98,11 +109,11 @@ func (p Profile) validate() error {
 		}
 		switch kind {
 		case "codex-acp":
-			if len(b.Command) != 1 || b.Config != "" || !filepath.IsAbs(b.Home) || filepath.Clean(b.Home) != b.Home || b.Home == "/" || b.Effort != "high" {
+			if len(b.Command) != 1 || b.Config != "" || b.Effort != "high" {
 				return errProfile
 			}
 		case "opencode":
-			if len(b.Command) != 2 || b.Command[1] != "acp" || b.Home != "" || b.Config != "managed" || b.Effort != "" {
+			if len(b.Command) != 2 || b.Command[1] != "acp" || b.Config != "managed" || b.Effort != "" {
 				return errProfile
 			}
 		default:

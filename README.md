@@ -58,6 +58,7 @@ profiles:
         effort: high
       - id: synthetic-opencode
         command: [opencode, acp]
+        home: /private/synthetic-opencode
         config: managed
         model: example/example-b
     limit_patterns: [usage limit]
@@ -70,7 +71,7 @@ profiles:
 ./bin/sluice acp --profile worker --config /private/synthetic-profile.yaml
 ```
 
-The current draft deliberately does not launch OpenCode until its worker-only managed configuration mount is proven. Do not run it against real accounts during verification; `make check` uses fake ACP peers and a synthetic subprocess. Codex launch requires an operator-provisioned dedicated private home, with the official CLI login already provisioned independently. Sluice writes only its owned `config.toml`; do not point it at an existing personal home. Its child environment is explicit rather than inherited, so provider tokens, `CODEX_CONFIG` and `MODEL_PROVIDER` are not copied. The surrounding operator runtime must supply executable/workspace/process isolation and independent credential custody; the launcher itself is not a security boundary. No turn/time limits are enforced in observe mode.
+OpenCode launch requires a dedicated operator-provisioned Linux runtime with a read-only profile-specific mount at `/etc/opencode` (see [managed config contract](docs/acp-managed-config.md)); otherwise it fails closed. The runtime contract and real CLI precedence are not yet verified on Tezgah. Do not run it against real accounts during verification; `make check` uses fake ACP peers and a synthetic subprocess. Codex launch requires an operator-provisioned dedicated private home, with the official CLI login already provisioned independently. Sluice writes only its owned `config.toml`; do not point it at an existing personal home. Its child environment is explicit rather than inherited, so provider tokens, `CODEX_CONFIG` and `MODEL_PROVIDER` are not copied. The surrounding operator runtime must supply executable/workspace/process isolation and independent credential custody; the launcher itself is not a security boundary. No turn/time limits are enforced in observe mode.
 
 ## Contributing
 

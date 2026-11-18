@@ -74,6 +74,10 @@ func projectModels(response map[string]json.RawMessage, want string, strict bool
 }
 
 func projectConfigResponse(raw json.RawMessage, want string) (json.RawMessage, error) {
+	// Legacy setters can return an empty or null success response.
+	if len(raw) == 0 || string(raw) == "null" {
+		return raw, nil
+	}
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil || fields == nil {
 		return nil, errInvalidSession
