@@ -39,11 +39,23 @@ type BackendSpec struct {
 }
 
 func LoadProfile(path, name string) (Profile, error) {
+	invalid := errors.New("cannot open trusted ACP profile config")
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return Profile{}, invalid
+	}
+	before, err := os.Stat(path)
+	if err != nil || !before.Mode().IsRegular() || before.Mode().Perm()&0022 != 0 {
+		return Profile{}, invalid
+	}
 	f, err := os.Open(path)
 	if err != nil {
-		return Profile{}, errors.New("cannot open ACP profile config")
+		return Profile{}, invalid
 	}
 	defer f.Close()
+	opened, err := f.Stat()
+	if err != nil || !os.SameFile(before, opened) || !opened.Mode().IsRegular() || opened.Mode().Perm()&0022 != 0 {
+		return Profile{}, invalid
+	}
 	return decodeProfile(f, name)
 }
 

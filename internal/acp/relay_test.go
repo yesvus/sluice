@@ -186,3 +186,75 @@ func TestProjectSession(t *testing.T) {
 		})
 	}
 }
+
+func TestRelayRejectsMismatchedBackend(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	server, clientStream := net.Pipe()
+	defer server.Close()
+	defer clientStream.Close()
+	_ = server.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = clientStream.SetDeadline(time.Now().Add(5 * time.Second))
+	var dials atomic.Int32
+	var callbacks atomic.Int32
+	closed := make(chan struct{}, 1)
+	dial := func(_ context.Context, _ Backend) (io.ReadWriteCloser, error) {
+		dials.Add(1)
+		parent, child := net.Pipe()
+		_ = parent.SetDeadline(time.Now().Add(5 * time.Second))
+		_ = child.SetDeadline(time.Now().Add(5 * time.Second))
+		fake := newWire(child, func(_ context.Context, method string, _ json.RawMessage) (any, *sdk.RequestError) {
+			switch method {
+			case "initialize":
+				return json.RawMessage(`{"protocolVersion":1}`), nil
+			case "session/new":
+				return json.RawMessage(`{"sessionId":"synthetic-mismatch","configOptions":[{"id":"model","category":"model","type":"select","currentValue":"project-override","options":[]}]}`), nil
+			default:
+				return nil, sdk.NewMethodNotFound(method)
+			}
+		})
+		fake.activate()
+		go func() {
+			<-fake.connection.Done()
+			_ = child.Close()
+			closed <- struct{}{}
+		}()
+		return parent, nil
+	}
+	client := newWire(clientStream, func(_ context.Context, method string, _ json.RawMessage) (any, *sdk.RequestError) {
+		callbacks.Add(1)
+		return nil, sdk.NewMethodNotFound(method)
+	})
+	client.activate()
+	done := make(chan error, 1)
+	var audit bytes.Buffer
+	go func() {
+		done <- runRelay(ctx, server, "synthetic", []Backend{{ID: "first", Model: "expected"}, {ID: "second", Model: "fallback"}}, []string{"model mismatch", "usage limit"}, dial, &audit)
+	}()
+	if _, err := client.call(ctx, "initialize", json.RawMessage(`{"protocolVersion":1}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.call(ctx, "session/new", json.RawMessage(`{"cwd":"/synthetic","mcpServers":[]}`)); err == nil {
+		t.Fatal("model mismatch exposed a usable session")
+	}
+	select {
+	case <-closed:
+	case <-ctx.Done():
+		t.Fatal("mismatched backend was not closed")
+	}
+	if _, err := client.call(ctx, "session/prompt", json.RawMessage(`{"sessionId":"synthetic-mismatch","prompt":[]}`)); err == nil {
+		t.Fatal("prompt to rejected session accepted")
+	}
+	_ = client.Close()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("relay did not exit")
+	}
+	if dials.Load() != 1 || callbacks.Load() != 0 || audit.Len() != 0 {
+		t.Fatal("rejected candidate fell back, leaked callbacks or produced misleading accepted-session audit")
+	}
+}

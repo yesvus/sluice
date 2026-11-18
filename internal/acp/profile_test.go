@@ -2,6 +2,8 @@ package acp
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -72,5 +74,23 @@ func TestRenderPinnedConfig(t *testing.T) {
 	var settings map[string]string
 	if err != nil || name != "opencode.json" || json.Unmarshal(data, &settings) != nil || len(settings) != 2 || settings["model"] != "example/example-b" || settings["small_model"] != "example/example-b" {
 		t.Fatalf("unexpected OpenCode config: %s", data)
+	}
+}
+
+func TestLoadProfileTrustedFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "profiles.yaml")
+	if err := os.WriteFile(path, []byte(exampleProfile), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadProfile(path, "worker"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0666); err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range []string{path, filepath.Dir(path), "profiles.yaml"} {
+		if _, err := LoadProfile(candidate, "worker"); err == nil {
+			t.Fatal("untrusted profile file accepted")
+		}
 	}
 }

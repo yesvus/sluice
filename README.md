@@ -43,7 +43,7 @@ onWatch runs separately, under the operator's own credentials, and is not bundle
 
 ## ACP worker pilot
 
-Build with Go 1.25 using `make build`. The ACP command uses stdin/stdout for protocol traffic and stderr for content-free JSON session audit records. Use an operator-controlled profile file outside the task worktree; select it with `--config` or `SLUICE_CONFIG`.
+Build with Go 1.25 using `make build`. The ACP command uses stdin/stdout for protocol traffic and stderr for content-free JSON session audit records. Use an operator-controlled profile file outside the launch working directory; select it with an absolute `--config` or `SLUICE_CONFIG`, defaulting to `/etc/sluice/profiles.yaml`. The launcher rejects workspace-local configs (including resolved symlinks), nonregular files, and group/world-writable files. The runtime must protect the file and its parent directory from task writes; these checks do not establish that boundary.
 
 Synthetic example (not a live account or usable model):
 
