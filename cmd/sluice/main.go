@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -50,9 +52,22 @@ func serve(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	listen := fs.String("listen", envOrDefault("SLUICE_LISTEN", defaultListen), "address to listen on")
 	config := fs.String("config", envOrDefault("SLUICE_CONFIG", defaultConfigPath), "path to local config file")
-	onwatchURL := fs.String("onwatch-url", envOrDefault("SLUICE_ONWATCH_URL", defaultOnwatchURL), "onWatch base URL")
+	// Unlike the other flags, this URL may embed credentials, so the env value
+	// must stay out of the help-visible default.
+	onwatchURL := fs.String("onwatch-url", defaultOnwatchURL, "onWatch base URL")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("serve: unexpected arguments: %s", strings.Join(fs.Args(), " "))
+	}
+	if !flagWasSet(fs, "onwatch-url") {
+		if env := os.Getenv("SLUICE_ONWATCH_URL"); env != "" {
+			*onwatchURL = env
+		}
 	}
 
 	mux := http.NewServeMux()
@@ -68,16 +83,16 @@ func serve(args []string) error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	log.Printf("sluice serve listen=%s config=%s onwatch=%s", *listen, *config, *onwatchURL)
+	log.Printf("sluice serve listen=%s config=%s onwatch=%s", *listen, *config, redactURL(*onwatchURL))
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
 
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- srv.ListenAndServe()
 	}()
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(sigCh)
 
 	select {
 	case sig := <-sigCh:
@@ -105,4 +120,23 @@ func envOrDefault(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func flagWasSet(fs *flag.FlagSet, name string) bool {
+	set := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			set = true
+		}
+	})
+	return set
+}
+
+func redactURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "<unparseable-url>"
+	}
+	parsed.User = nil
+	return parsed.String()
 }
