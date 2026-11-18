@@ -140,9 +140,10 @@ func (c *Client) providers(ctx context.Context) ([]string, error) {
 func (c *Client) Health(ctx context.Context) error {
 	err := c.get(ctx, "/health", nil, nil)
 	var status *statusError
-	if errors.As(err, &status) && status.status == http.StatusNotFound {
-		// v2.14.13 has no /health route. Discovery proves API reachability,
-		// not provider health or freshness.
+	if errors.As(err, &status) && (status.status == http.StatusNotFound || status.status == http.StatusFound) {
+		// v2.14.13 has no /health route; authenticated instances may
+		// redirect non-API paths to login. Do not follow the redirect.
+		// Authenticated discovery proves API reachability only.
 		_, err = c.providers(ctx)
 	}
 	return err

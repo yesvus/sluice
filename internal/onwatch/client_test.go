@@ -178,3 +178,43 @@ func TestClientErrors(t *testing.T) {
 		t.Fatalf("cancellation lost: %v", err)
 	}
 }
+
+func TestHealthLoginRedirect(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		code int
+	}{
+		{"authenticated", http.StatusOK},
+		{"denied", http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/health":
+					http.Redirect(w, r, "/login", http.StatusFound)
+				case "/api/providers":
+					user, pass, ok := r.BasicAuth()
+					if !ok || user != "fixture-user" || pass != "fixture-password" || tc.code != http.StatusOK {
+						w.WriteHeader(http.StatusUnauthorized)
+						return
+					}
+					_, _ = w.Write([]byte(`{"providers":["anthropic"]}`))
+				default:
+					t.Error("unexpected redirect or API path")
+					w.WriteHeader(http.StatusBadRequest)
+				}
+			}))
+			defer srv.Close()
+			err := New(srv.URL, "fixture-user", "fixture-password").Health(context.Background())
+			if tc.code == http.StatusOK && err != nil {
+				t.Fatal(err)
+			}
+			if tc.code != http.StatusOK {
+				var status *statusError
+				if !errors.As(err, &status) || status.status != tc.code {
+					t.Fatalf("unauthenticated discovery accepted: %v", err)
+				}
+			}
+		})
+	}
+}
