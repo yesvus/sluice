@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Synthetic local-only demonstration; no real provider credentials.
-set -euo pipefail
+set -Eeuo pipefail
 cd "$(dirname "$0")"
 
 API=http://127.0.0.1:4000
@@ -10,7 +10,7 @@ cleanup() { rm -rf -- "$TMP"; }
 trap cleanup EXIT
 trap 'echo "Demo failed. Inspect the local fixture; before retry, docker compose down -v deletes its disposable database." >&2' ERR
 
-docker compose up -d --wait --wait-timeout 180
+docker compose up -d --wait --wait-timeout 420
 
 deadline=$((SECONDS + 60))
 ready=0

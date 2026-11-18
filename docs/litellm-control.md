@@ -20,12 +20,12 @@ https://github.com/BerriAI/litellm/blob/096ff016817c1d26928ef984e5ee16ee285ccd28
 
 | # | Candidate | Works for external runtime control? | Time to effect | Sluice down | Auth required |
 |---|-----------|-------------------------------------|----------------|-------------|---------------|
-| 1 | Proxy management HTTP API | **Yes**, for DB-stored deployments | Handling instance: same request; peers: next periodic reconcile (default 30s), subject to successful reconciliation | No request-time dependency; persisted blocks remain until explicitly restored (not full fail-open) | Master key / proxy admin key; `PROXY_ADMIN` for pause; Postgres required |
+| 1 | Proxy management HTTP API | **Yes**, for DB-stored deployments | Local reconcile attempted in request; effective state requires verification; peers: next successful periodic reconcile (default 30s) | No request-time dependency; persisted blocks remain until explicitly restored (not full fail-open) | Master key / proxy admin key; `PROXY_ADMIN` for pause; Postgres required |
 | 2 | Built-in cooldown | **No** external trigger | Only starts when LiteLLM itself sees a failure; default 5s duration | Not applicable, no dependency on sluice | None |
 | 3 | Custom callback / pre-call hook | **Yes**, but needs a thin Python shim in the proxy | Next request | Fail open only if the shim catches HTTP errors and returns the unfiltered list; an uncaught error becomes an attempt failure | No LiteLLM management auth for the hook; shim-to-sluice call needs its own token |
 | 4 | Config rewrite + reload | Technically yes, unsuitable for steering | YAML edit needs a worker restart (seconds, drops in-flight work); `/config/update` is DB/UI-only | No runtime dependency, but state is stale until reload | `PROXY_ADMIN` and DB for `/config/update`; filesystem access for YAML |
 
-**Recommendation: candidate 1**, the management HTTP API. It keeps decisions in Go, needs no request-time shim, and reconciles the handling proxy instance within the API call. It does not by itself satisfy automatic fail-open restoration of persistent blocks. Details and caveats are in [Recommendation](#recommendation).
+**Recommendation: candidate 1**, the management HTTP API. It keeps decisions in Go, needs no request-time shim, and attempts local reconciliation within the API call. HTTP success alone does not prove the requested state reached the routing plane. It does not by itself satisfy automatic fail-open restoration of persistent blocks. Details and caveats are in [Recommendation](#recommendation).
 
 ## Candidate 1: Proxy management HTTP API
 
@@ -57,7 +57,7 @@ The router actually excludes paused deployments. `blocked` is mirrored into `mod
 
 ### Time until a change takes effect
 
-`clear_cache()` is awaited inside the control request, so a successful response confirms reconciliation of the handling instance, not every proxy replica. Other replicas can still route to the deployment until their next successful periodic reconciliation; the interval is not a strict upper bound under failures. When `store_model_in_db` is on, a periodic reconcile every `proxy_config_reload_interval_seconds` (default 30 seconds) also pulls DB state into the router: [`proxy_server.py#L11809-L11821`](https://github.com/BerriAI/litellm/blob/096ff016817c1d26928ef984e5ee16ee285ccd28/litellm/proxy/proxy_server.py#L11809-L11821), default in [`constants.py#L1992`](https://github.com/BerriAI/litellm/blob/096ff016817c1d26928ef984e5ee16ee285ccd28/litellm/constants.py#L1992).
+`clear_cache()` is awaited inside the control request, but itself catches reload failures and can return an empty outcome: [error path](https://github.com/BerriAI/litellm/blob/096ff016817c1d26928ef984e5ee16ee285ccd28/litellm/proxy/management_endpoints/model_management_endpoints.py#L4134-L4148). HTTP success alone is not proof of effective state even on the handling instance. Independently verify applied routing state there (not merely a DB row or HTTP status); prove every serving replica has converged before relying on the pause. Other replicas can still route to the deployment until their next successful periodic reconciliation; the interval is not a strict upper bound under failures. When `store_model_in_db` is on, a periodic reconcile every `proxy_config_reload_interval_seconds` (default 30 seconds) also pulls DB state into the router: [`proxy_server.py#L11809-L11821`](https://github.com/BerriAI/litellm/blob/096ff016817c1d26928ef984e5ee16ee285ccd28/litellm/proxy/proxy_server.py#L11809-L11821), default in [`constants.py#L1992`](https://github.com/BerriAI/litellm/blob/096ff016817c1d26928ef984e5ee16ee285ccd28/litellm/constants.py#L1992).
 
 ### Behaviour when sluice is down
 
@@ -141,14 +141,14 @@ No runtime dependency, but the deployed configuration is only as fresh as sluice
 
 ## Recommendation
 
-Use candidate 1, the management HTTP API, for roadmap step 3 (#8 calibrate, #9 act):
+Evaluate candidate 1, the management HTTP API, in the synthetic research/calibration scope only. The following is a proposed control contract, not an approved #9 act-stage implementation:
 
 1. Register each steerable account deployment with `POST /model/new` and a stable `model_info.id`, with `store_model_in_db: true`.
 2. For a soft throttle, `PATCH /model/{id}/update` with `litellm_params: {"rpm": ..., "tpm": ...}`.
 3. For a hard pause before a limit, `POST /model/block` with `{"model_id": "..."}`; restore with `POST /model/unblock` at the reported reset only once an independent restoration/reconciliation path is accepted. No automatic expiry is provided.
 4. The local proof uses a synthetic master key. A master key is full administrative access, not scoped. Before act mode, establish a dedicated identity and prove the minimum supported authorization for block/unblock/update; the pinned handlers require `PROXY_ADMIN` for block. Do not claim route-level least privilege is available until verified; isolate the management surface and never reuse the master key in production Sluice. Do not pass subscription credentials; only `api_key` and `free_tier` accounts are steerable, `subscription_observed` accounts are never routed to, and a free route must never spill into a paid one.
 
-Why this option: it keeps decision logic in Go, has no request-time dependency on sluice, reconciles the handling instance within the control request, and reuses LiteLLM's cooldowns. The costs are Postgres, replica convergence and persistent stale decisions. Candidate 1 is the research/proof recommendation only; the hard fail-open acceptance gate is unresolved.
+Why this option: it keeps decision logic in Go, has no request-time dependency on sluice, attempts reconciliation within the control request, and reuses LiteLLM's cooldowns; prove applied state independently before relying on it. The costs are Postgres, replica convergence and persistent stale decisions. Candidate 1 is the research/proof recommendation only; the hard fail-open acceptance gate is unresolved.
 
 Keep candidate 3 as the fallback if a DB-free deployment or per-request decisions become a hard requirement. If that path is taken, the shim must be a tens-of-lines `CustomLogger.async_filter_deployments` override with explicit fail-open error handling, and all decisions must remain in Go.
 
