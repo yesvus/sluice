@@ -11,4 +11,5 @@ check:
 	go test -race ./...
 
 build:
+	mkdir -p bin
 	go build -o bin/sluice ./cmd/sluice
