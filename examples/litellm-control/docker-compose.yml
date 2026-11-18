@@ -34,7 +34,7 @@ services:
       fake-upstream:
         condition: service_healthy
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"
     environment:
       LITELLM_MASTER_KEY: sk-local-master-key
       DATABASE_URL: postgresql://litellm:litellm@postgres:5432/litellm

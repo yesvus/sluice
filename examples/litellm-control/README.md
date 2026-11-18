@@ -1,6 +1,6 @@
 # LiteLLM control proof
 
-Runnable proof for [docs/litellm-control.md](../../docs/litellm-control.md). It demonstrates the recommended mechanism: driving a LiteLLM Proxy deployment out of rotation and back with the management HTTP API.
+Runnable proof for [docs/litellm-control.md](../../docs/litellm-control.md). It is intended to demonstrate the recommended mechanism: driving a LiteLLM Proxy deployment out of rotation and back with the management HTTP API.
 
 ## What runs
 
@@ -12,7 +12,7 @@ Every key and credential in this stack is a local fixture. Nothing here connects
 
 ## Run
 
-Requires a working Docker daemon with Compose, `curl` and `python3`, with host port 4000 free.
+Requires a working Docker daemon with a Compose version supporting `up --wait --wait-timeout`, `curl` and `python3`, with loopback port 4000 free. This example uses disposable fixtures and a local admin key. The full pinned proxy path has not yet been executed.
 
 ```bash
 bash run.sh
@@ -22,14 +22,14 @@ The script:
 
 1. Starts the stack and waits for health.
 2. Creates two DB-stored deployments, `dep-a` and `dep-b`, in model group `fake-route`.
-3. Sends six chat completions and counts which deployment served them.
-4. Calls `POST /model/block` for `dep-a` and repeats the traffic check.
-5. Calls `POST /model/unblock` and repeats the traffic check.
-6. Sends one optional `PATCH /model/{id}/update` with new `rpm`/`tpm` values.
+3. Sends 32 chat completions, checks every response, and requires both fake deployments to be observed.
+4. Calls `POST /model/block` for `dep-a` and requires all 32 requests to be served by `dep-b`.
+5. Calls `POST /model/unblock` and requires both deployments to appear again.
+6. Optionally, with `CHECK_LIMIT_UPDATE=1 bash run.sh` on a fresh demo, sends `PATCH /model/{id}/update` with new `rpm`/`tpm` values; HTTP success is not proof of effective limits.
 
-A successful run shows both `dep-a` and `dep-b` before the block, only `dep-b` after the block, and both again after the unblock. Those curl calls are the calls the Go controller makes.
+Expected result: both `dep-a` (`fake-model-a`) and `dep-b` (`fake-model-b`) before block, only `dep-b` while blocked, and both again after restore. This is probabilistic sampling, not exhaustive proof, and every required request must succeed. The planned Go controller would use these calls. Runtime behavior remains unverified until the fixture actually passes.
 
-Cleanup:
+Cleanup or reset before every retry (deletes only this Compose project's disposable demo database; do not use it against other projects):
 
 ```bash
 docker compose down -v
