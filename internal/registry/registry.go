@@ -3,10 +3,22 @@ package registry
 import "errors"
 
 // Kind is how an account authenticates to its provider.
-type Kind string // "api_key" | "free_tier" | "subscription_observed"
+type Kind string
+
+const (
+	KindAPIKey               Kind = "api_key"
+	KindFreeTier             Kind = "free_tier"
+	KindSubscriptionObserved Kind = "subscription_observed"
+)
 
 // Tier is the cost tier of an account.
-type Tier string // "free" | "cheap" | "frontier"
+type Tier string
+
+const (
+	TierFree     Tier = "free"
+	TierCheap    Tier = "cheap"
+	TierFrontier Tier = "frontier"
+)
 
 // Account is one configured account.
 type Account struct {
@@ -24,7 +36,7 @@ type Registry struct {
 	accounts []Account
 }
 
-// New returns a registry holding a copy of accounts. It does not validate; Load does.
+// New returns a registry holding a copy of accounts. It does not validate; Load validation is deferred to #4.
 func New(accounts []Account) *Registry {
 	return &Registry{accounts: cloneAccounts(accounts)}
 }
