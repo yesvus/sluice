@@ -35,13 +35,14 @@ type relay struct {
 	patterns    []string
 	backendDone chan struct{}
 
-	mu       sync.Mutex
-	init     json.RawMessage
-	starting bool
-	closing  bool
-	prompt   bool
-	session  *activeSession
-	audit    Audit
+	mu        sync.Mutex
+	init      json.RawMessage
+	starting  bool
+	startDone chan struct{}
+	closing   bool
+	prompt    bool
+	session   *activeSession
+	audit     Audit
 }
 
 // runRelay serves a single worker session per front connection. The dialer
@@ -61,9 +62,15 @@ func runRelay(ctx context.Context, client io.ReadWriteCloser, profile string, al
 		reason = "backend_error"
 	}
 	cancel()
-	_ = r.front.Close()
 	r.mu.Lock()
 	r.closing = true
+	startDone := r.startDone
+	r.mu.Unlock()
+	_ = r.front.Close()
+	if startDone != nil {
+		<-startDone
+	}
+	r.mu.Lock()
 	s := r.session
 	entry := r.audit
 	r.mu.Unlock()
@@ -145,8 +152,15 @@ func (r *relay) newSession(ctx context.Context, params json.RawMessage) (any, *s
 		return nil, sdk.NewInvalidRequest(nil)
 	}
 	r.starting = true
+	startDone := make(chan struct{})
+	r.startDone = startDone
 	init := r.init
 	r.mu.Unlock()
+	defer close(startDone)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stop := context.AfterFunc(r.ctx, cancel)
+	defer stop()
 
 	started := time.Now().UTC()
 	chosen, s, err := startPinned(ctx, r.backends, r.patterns, func(ctx context.Context, b Backend) (*activeSession, error) {
@@ -158,6 +172,9 @@ func (r *relay) newSession(ctx context.Context, params json.RawMessage) (any, *s
 	if err != nil {
 		if errors.Is(err, ErrModelMismatch) {
 			return nil, sdk.NewInternalError(map[string]string{"reason": "model_mismatch"})
+		}
+		if errors.Is(err, errIsolationRequired) {
+			return nil, sdk.NewInternalError(map[string]string{"reason": "managed_isolation_required"})
 		}
 		if errors.Is(err, ErrNoBackend) {
 			return nil, sdk.NewInternalError(map[string]string{"reason": "no_backend_available"})
@@ -180,7 +197,7 @@ func (r *relay) newSession(ctx context.Context, params json.RawMessage) (any, *s
 func (r *relay) openSession(ctx context.Context, b Backend, init, params json.RawMessage) (*activeSession, error) {
 	stream, err := r.dial(r.ctx, b)
 	if err != nil {
-		return nil, errBackendLaunch
+		return nil, launchReason(err)
 	}
 	var earlyCallback atomic.Bool
 	var peer *wire
