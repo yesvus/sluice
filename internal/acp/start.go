@@ -9,7 +9,10 @@ import (
 	"time"
 )
 
-var ErrNoBackend = errors.New("no ACP backend available")
+var (
+	ErrNoBackend     = errors.New("no ACP backend available")
+	ErrModelMismatch = errors.New("ACP backend reported unexpected or missing model")
+)
 
 type Backend struct {
 	ID    string
@@ -50,6 +53,33 @@ func usageLimit(err error, patterns []string) bool {
 	return false
 }
 
+// ModelBackend is a successfully initialized backend whose session has not yet
+// been exposed to the client. Close must terminate that backend session/process.
+type ModelBackend interface {
+	ReportedModel() string
+	Close() error
+}
+
+func startPinned[T ModelBackend](ctx context.Context, allowed []Backend, patterns []string, start func(context.Context, Backend) (T, error)) (Backend, T, error) {
+	return chooseAtStart(ctx, allowed, patterns, func(ctx context.Context, b Backend) (T, error) {
+		var zero T
+		session, err := start(ctx, b)
+		if err != nil {
+			return zero, err
+		}
+		if b.Model == "" || session.ReportedModel() != b.Model {
+			// Do not include the backend's untrusted model string or close error.
+			_ = session.Close()
+			return zero, ErrModelMismatch
+		}
+		if err := ctx.Err(); err != nil {
+			_ = session.Close()
+			return zero, err
+		}
+		return session, nil
+	})
+}
+
 // chooseAtStart is only for session creation. start must close any failed
 // backend and return an error before a session is exposed to the client.
 func chooseAtStart[T any](ctx context.Context, allowed []Backend, patterns []string, start func(context.Context, Backend) (T, error)) (Backend, T, error) {
@@ -65,7 +95,7 @@ func chooseAtStart[T any](ctx context.Context, allowed []Backend, patterns []str
 		if ctx.Err() != nil {
 			return Backend{}, zero, ctx.Err()
 		}
-		if !usageLimit(err, patterns) {
+		if errors.Is(err, ErrModelMismatch) || !usageLimit(err, patterns) {
 			return Backend{}, zero, err
 		}
 	}
