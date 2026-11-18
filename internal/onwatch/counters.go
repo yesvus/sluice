@@ -25,9 +25,15 @@ func decodeCounters(provider string, data json.RawMessage) ([]quota.Snapshot, er
 		TokensLimit  *counterRow `json:"tokensLimit"`
 		TimeLimit    *counterRow `json:"timeLimit"`
 		Credits      *counterRow `json:"credits"`
+		Paused       bool        `json:"paused"`
+		AuthRequired bool        `json:"authRequired"`
+		IsStale      bool        `json:"isStale"`
 	}
 	if json.Unmarshal(data, &envelope) != nil || envelope.CapturedAt == nil || envelope.CapturedAt.IsZero() {
 		return nil, errSchema
+	}
+	if envelope.Paused || envelope.AuthRequired || envelope.IsStale {
+		return nil, errUnavailable
 	}
 	type named struct {
 		name string
@@ -48,18 +54,14 @@ func decodeCounters(provider string, data json.RawMessage) ([]quota.Snapshot, er
 	out := make([]quota.Snapshot, 0, len(rows))
 	for _, item := range rows {
 		row := item.row
-		if row == nil || row.Usage == nil || row.Percent == nil || *row.Usage < 0 || *row.Percent < 0 {
+		if row == nil {
 			return nil, errSchema
 		}
 		if row.Limit == nil || *row.Limit == 0 {
-			// Empty/default Synthetic and Z.ai rows and unlimited/unknown
-			// OpenRouter limits cannot establish finite quota headroom.
-			if row.Limit == nil && provider != "openrouter" {
-				return nil, errSchema
-			}
+			// No finite headroom in this window; retain finite siblings.
 			continue
 		}
-		if *row.Limit < 0 {
+		if *row.Limit < 0 || row.Usage == nil || row.Percent == nil || *row.Usage < 0 || *row.Percent < 0 {
 			return nil, errSchema
 		}
 		resets := row.RenewsAt

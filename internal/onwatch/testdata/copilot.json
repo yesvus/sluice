@@ -11,10 +11,7 @@
     },
     {
       "name": "synthetic-unlimited",
-      "unlimited": true,
-      "entitlement": 0,
-      "remaining": 0,
-      "usagePercent": 0
+      "unlimited": true
     }
   ]
 }

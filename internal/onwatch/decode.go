@@ -93,10 +93,16 @@ func decodeProvider(provider string, data json.RawMessage, requireAccount bool) 
 		}
 		if provider == "copilot" {
 			percent, resets = row.UsagePercent, row.ResetDate
-			if row.Unlimited == nil || row.Entitlement == nil || row.Remaining == nil || *row.Entitlement < 0 || *row.Remaining < 0 {
+			if row.Unlimited == nil {
 				return nil, errSchema
 			}
-			if *row.Unlimited || *row.Entitlement == 0 {
+			if *row.Unlimited {
+				continue
+			}
+			if row.Entitlement == nil || row.Remaining == nil || *row.Entitlement < 0 || *row.Remaining < 0 {
+				return nil, errSchema
+			}
+			if *row.Entitlement == 0 {
 				continue
 			}
 			if *row.Remaining > *row.Entitlement {

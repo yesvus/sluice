@@ -9,15 +9,31 @@ import (
 	"testing"
 )
 
+func miniMaxExpected() map[snapshotKey]snapshotWant {
+	return map[snapshotKey]snapshotWant{
+		{"minimax", "103", "synthetic-pool"}:      {0.2, 20, 100, true, "2026-01-01T10:00:00Z", "2026-01-01T15:00:00Z"},
+		{"minimax", "103", "wkly_synthetic-pool"}: {0.4, 80, 200, true, "2026-01-01T10:00:00Z", ""},
+		{"minimax", "104", "synthetic-pool"}:      {0.1, 10, 100, true, "2026-01-01T10:00:00Z", ""},
+	}
+}
+
 func TestCounterProviders(t *testing.T) {
 	for _, tc := range []struct {
 		provider string
-		want     int
+		want     map[snapshotKey]snapshotWant
 	}{
-		{"synthetic", 2},
-		{"zai", 2},
-		{"openrouter", 1},
-		{"minimax", 3},
+		{"synthetic", map[snapshotKey]snapshotWant{
+			{"synthetic", "", "subscription"}: {0.6, 60, 100, true, "2026-01-01T10:00:00Z", "2026-01-01T15:00:00Z"},
+			{"synthetic", "", "toolCalls"}:    {0.2, 2, 10, true, "2026-01-01T10:00:00Z", "2026-01-01T15:00:00Z"},
+		}},
+		{"zai", map[snapshotKey]snapshotWant{
+			{"zai", "", "tokensLimit"}: {0.4, 40, 100, true, "2026-01-01T10:00:00Z", ""},
+			{"zai", "", "timeLimit"}:   {0.5, 5, 10, true, "2026-01-01T10:00:00Z", "2026-01-01T15:00:00Z"},
+		}},
+		{"openrouter", map[snapshotKey]snapshotWant{
+			{"openrouter", "", "credits"}: {0.4, 2, 5, true, "2026-01-01T10:00:00Z", ""},
+		}},
+		{"minimax", miniMaxExpected()},
 	} {
 		t.Run(tc.provider, func(t *testing.T) {
 			body := fixture(t, tc.provider)
@@ -43,20 +59,10 @@ func TestCounterProviders(t *testing.T) {
 			}))
 			defer srv.Close()
 			rows, err := New(srv.URL, "", "").Current(context.Background())
-			if err != nil || len(rows) != tc.want {
-				t.Fatalf("got %d rows: %v", len(rows), err)
+			if err != nil {
+				t.Fatal(err)
 			}
-			for _, row := range rows {
-				if row.Provider != tc.provider || row.Used == nil || row.Limit == nil || *row.Limit <= 0 {
-					t.Fatal("counter identity or values lost")
-				}
-				if tc.provider == "zai" && row.Window == "tokensLimit" && row.ResetsAt != nil {
-					t.Fatal("N/A reset promoted to real timestamp")
-				}
-			}
-			if tc.provider == "minimax" && (rows[0].AccountKey != "103" || rows[2].AccountKey != "104" || rows[1].Window != "wkly_synthetic-pool") {
-				t.Fatal("MiniMax account or weekly identity lost")
-			}
+			assertSnapshots(t, rows, tc.want)
 		})
 	}
 }
@@ -85,10 +91,66 @@ func TestCombinedMiniMaxAccounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	rows, err := decodeCombined(map[string]json.RawMessage{"minimaxAccounts": data["accounts"]}, map[string]bool{"minimax": true})
-	if err != nil || len(rows) != 3 || rows[2].AccountKey != "104" {
+	if err != nil {
 		t.Fatalf("combined accounts: %v", err)
 	}
+	assertSnapshots(t, rows, miniMaxExpected())
 	if _, err := decodeCombined(map[string]json.RawMessage{}, map[string]bool{"minimax": true}); !errors.Is(err, errUnavailable) {
 		t.Fatal("empty combined data accepted as fresh")
+	}
+}
+
+func TestCounterUnavailableFlags(t *testing.T) {
+	for _, provider := range []string{"synthetic", "zai", "openrouter"} {
+		for _, flag := range []string{"paused", "authRequired", "isStale"} {
+			t.Run(provider+"/"+flag, func(t *testing.T) {
+				var data map[string]json.RawMessage
+				if err := json.Unmarshal(fixture(t, provider), &data); err != nil {
+					t.Fatal(err)
+				}
+				data[flag] = json.RawMessage("true")
+				body, err := json.Marshal(data)
+				if err != nil {
+					t.Fatal(err)
+				}
+				rows, err := decodeProvider(provider, body, false)
+				if rows != nil || !errors.Is(err, errUnavailable) {
+					t.Fatal("unavailable counter provider returned observations")
+				}
+			})
+		}
+	}
+}
+
+func TestUnknownCounterLimitPreservesFiniteSibling(t *testing.T) {
+	for _, tc := range []struct {
+		provider string
+		window   string
+		want     map[snapshotKey]snapshotWant
+	}{
+		{"synthetic", "search", map[snapshotKey]snapshotWant{
+			{"synthetic", "", "subscription"}: {0.6, 60, 100, true, "2026-01-01T10:00:00Z", "2026-01-01T15:00:00Z"},
+			{"synthetic", "", "toolCalls"}:    {0.2, 2, 10, true, "2026-01-01T10:00:00Z", "2026-01-01T15:00:00Z"},
+		}},
+		{"zai", "tokensLimit", map[snapshotKey]snapshotWant{
+			{"zai", "", "timeLimit"}: {0.5, 5, 10, true, "2026-01-01T10:00:00Z", "2026-01-01T15:00:00Z"},
+		}},
+	} {
+		t.Run(tc.provider, func(t *testing.T) {
+			var data map[string]json.RawMessage
+			if err := json.Unmarshal(fixture(t, tc.provider), &data); err != nil {
+				t.Fatal(err)
+			}
+			data[tc.window] = json.RawMessage(`{"limit":null}`)
+			body, err := json.Marshal(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rows, err := decodeProvider(tc.provider, body, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertSnapshots(t, rows, tc.want)
+		})
 	}
 }

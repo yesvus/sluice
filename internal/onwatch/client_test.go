@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/yesvus/sluice/internal/quota"
 )
 
 func fixture(t *testing.T, name string) []byte {
@@ -18,6 +20,54 @@ func fixture(t *testing.T, name string) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+type snapshotKey struct {
+	provider, account, window string
+}
+
+type snapshotWant struct {
+	utilization     float64
+	used, limit     float64
+	hasCounters     bool
+	observed, reset string
+}
+
+func assertSnapshots(t *testing.T, rows []quota.Snapshot, want map[snapshotKey]snapshotWant) {
+	t.Helper()
+	if len(rows) != len(want) {
+		t.Fatalf("got %d rows, want %d", len(rows), len(want))
+	}
+	seen := make(map[snapshotKey]bool, len(want))
+	for _, row := range rows {
+		key := snapshotKey{row.Provider, row.AccountKey, row.Window}
+		w, ok := want[key]
+		if !ok || seen[key] {
+			t.Fatalf("unexpected or duplicate row: %+v", key)
+		}
+		seen[key] = true
+		at, err := time.Parse(time.RFC3339, w.observed)
+		if err != nil || !row.ObservedAt.Equal(at) || row.Utilization != w.utilization {
+			t.Fatalf("wrong observation or utilization: %+v", key)
+		}
+		if w.hasCounters {
+			if row.Used == nil || row.Limit == nil || *row.Used != w.used || *row.Limit != w.limit {
+				t.Fatalf("wrong finite counters: %+v", key)
+			}
+		} else if row.Used != nil || row.Limit != nil {
+			t.Fatalf("unexpected absolute counters: %+v", key)
+		}
+		if w.reset == "" {
+			if row.ResetsAt != nil {
+				t.Fatalf("unexpected reset: %+v", key)
+			}
+		} else {
+			reset, err := time.Parse(time.RFC3339, w.reset)
+			if err != nil || row.ResetsAt == nil || !row.ResetsAt.Equal(reset) {
+				t.Fatalf("wrong reset: %+v", key)
+			}
+		}
+	}
 }
 
 func TestCurrentCombined(t *testing.T) {
@@ -51,32 +101,14 @@ func TestCurrentCombined(t *testing.T) {
 	if err != nil || len(rows) != 6 {
 		t.Fatalf("got %d rows, err=%v", len(rows), err)
 	}
-	for _, row := range rows {
-		if row.Utilization < 0 || row.Utilization > 1 || row.ObservedAt.IsZero() {
-			t.Fatal("invalid normalized snapshot")
-		}
-		switch row.Provider {
-		case "anthropic":
-			if row.Utilization != 0.25 || row.Used != nil || row.Limit != nil || row.ObservedAt.Hour() != 9 {
-				t.Fatal("anthropic percent or timestamp is wrong")
-			}
-		case "antigravity":
-			if row.Window != "synthetic-weekly" || row.Utilization != 0.4 || row.ResetsAt == nil {
-				t.Fatal("AGY bucket identity lost")
-			}
-		case "codex":
-			if row.AccountKey != "101" && row.AccountKey != "102" {
-				t.Fatal("account identity lost")
-			}
-		case "opencode":
-			if row.Window == "five_hour" && (row.Used != nil || row.Limit != nil) {
-				t.Fatal("percentage placeholders became counters")
-			}
-			if row.Window == "monthly" && (row.Used == nil || row.Limit == nil || *row.Used != 5 || *row.Limit != 10) {
-				t.Fatal("real counters missing")
-			}
-		}
-	}
+	assertSnapshots(t, rows, map[snapshotKey]snapshotWant{
+		{"anthropic", "", "five_hour"}:          {0.25, 0, 0, false, "2026-01-01T09:00:00Z", "2026-01-01T14:00:00Z"},
+		{"antigravity", "", "synthetic-weekly"}: {0.4, 0, 0, false, "2026-01-01T10:00:00Z", "2026-01-08T10:00:00Z"},
+		{"codex", "101", "five_hour"}:           {0.2, 0, 0, false, "2026-01-01T10:00:00Z", ""},
+		{"codex", "102", "seven_day"}:           {0.8, 0, 0, false, "2026-01-01T10:00:00Z", ""},
+		{"opencode", "", "five_hour"}:           {0.3, 0, 0, false, "2026-01-01T10:00:00Z", ""},
+		{"opencode", "", "monthly"}:             {0.5, 5, 10, true, "2026-01-01T10:00:00Z", ""},
+	})
 }
 
 func TestSingleCodexAccounts(t *testing.T) {
@@ -97,9 +129,13 @@ func TestSingleCodexAccounts(t *testing.T) {
 	}))
 	defer srv.Close()
 	rows, err := New(srv.URL, "", "").Current(context.Background())
-	if err != nil || len(rows) != 2 || rows[0].AccountKey == rows[1].AccountKey {
+	if err != nil {
 		t.Fatalf("multi-account read failed: %v", err)
 	}
+	assertSnapshots(t, rows, map[snapshotKey]snapshotWant{
+		{"codex", "101", "five_hour"}: {0.2, 0, 0, false, "2026-01-01T10:00:00Z", ""},
+		{"codex", "102", "seven_day"}: {0.8, 0, 0, false, "2026-01-01T10:00:00Z", ""},
+	})
 }
 
 func TestClientErrors(t *testing.T) {
