@@ -1,7 +1,7 @@
 .PHONY: check build
 
 check:
-	@unformatted=$$(gofmt -l .); \
+	@unformatted=$$(gofmt -l .) || exit 1; \
 	if [ -n "$$unformatted" ]; then \
 		echo "gofmt needed on:"; \
 		echo "$$unformatted"; \
