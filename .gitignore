@@ -1,0 +1,16 @@
+# local config and secrets
+.env
+config.local.yaml
+secrets/
+
+# onwatch and local data
+*.db
+*.sqlite
+*.sqlite-journal
+
+# build and tooling
+/bin/
+/dist/
+__pycache__/
+.venv/
+node_modules/
