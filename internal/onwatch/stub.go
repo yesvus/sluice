@@ -20,6 +20,8 @@ type Client struct {
 	base       *url.URL
 	user, pass string
 	http       *http.Client
+	selected   []string
+	maxAge     time.Duration
 }
 
 type Option func(*Client)
@@ -28,6 +30,24 @@ func WithTimeout(timeout time.Duration) Option {
 	return func(c *Client) {
 		if timeout > 0 {
 			c.http.Timeout = timeout
+		}
+	}
+}
+
+// WithProviders restricts observations to an explicit set of providers.
+// All selected providers must be available; no implicit downgrade occurs.
+func WithProviders(providers ...string) Option {
+	selected := append([]string{}, providers...)
+	return func(c *Client) {
+		c.selected = append([]string{}, selected...)
+	}
+}
+
+// WithMaxAge opts into a caller-chosen observation freshness bound.
+func WithMaxAge(age time.Duration) Option {
+	return func(c *Client) {
+		if age > 0 {
+			c.maxAge = age
 		}
 	}
 }
@@ -87,6 +107,9 @@ func (c *Client) get(ctx context.Context, endpoint string, query url.Values, out
 		return &statusError{endpoint, resp.StatusCode}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
+	if ctx.Err() != nil {
+		return fmt.Errorf("onwatch %s: %w", endpoint, ctx.Err())
+	}
 	if err != nil || len(body) > maxBody {
 		return fmt.Errorf("onwatch %s: invalid or oversized response", endpoint)
 	}
@@ -126,6 +149,35 @@ func (c *Client) Health(ctx context.Context) error {
 }
 
 func (c *Client) Current(ctx context.Context) ([]quota.Snapshot, error) {
+	rows, err := c.current(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if c.maxAge > 0 {
+		now := time.Now()
+		for _, row := range rows {
+			if row.ObservedAt.After(now) || now.Sub(row.ObservedAt) > c.maxAge {
+				return nil, errUnavailable
+			}
+		}
+	}
+	return rows, nil
+}
+
+func (c *Client) current(ctx context.Context) ([]quota.Snapshot, error) {
+	var wanted map[string]bool
+	if c.selected != nil {
+		wanted = make(map[string]bool, len(c.selected))
+		for _, provider := range c.selected {
+			if !supported(provider) || wanted[provider] {
+				return nil, errors.New("onwatch: invalid provider selection")
+			}
+			wanted[provider] = true
+		}
+		if len(wanted) == 0 {
+			return nil, errors.New("onwatch: empty provider selection")
+		}
+	}
 	providers, err := c.providers(ctx)
 	if err != nil {
 		return nil, err
@@ -140,25 +192,45 @@ func (c *Client) Current(ctx context.Context) ([]quota.Snapshot, error) {
 			both = true
 			continue
 		}
-		if !supported(provider) || seen[provider] {
-			return nil, errors.New("onwatch /api/providers: unsupported or duplicate provider")
+		if provider == "" || seen[provider] {
+			return nil, errors.New("onwatch /api/providers: invalid or duplicate provider")
 		}
 		seen[provider] = true
 	}
-	if len(seen) == 0 {
-		return nil, errors.New("onwatch /api/providers: no supported providers")
+	if wanted == nil {
+		wanted = seen
+		for provider := range wanted {
+			if !supported(provider) {
+				return nil, errors.New("onwatch /api/providers: unsupported provider")
+			}
+		}
+	}
+	for provider := range wanted {
+		if !seen[provider] {
+			return nil, errUnavailable
+		}
+	}
+	if len(wanted) == 0 {
+		return nil, errUnavailable
 	}
 	if both {
 		var data map[string]json.RawMessage
 		if err := c.get(ctx, "/api/current", url.Values{"provider": {"both"}}, &data); err != nil {
 			return nil, err
 		}
-		return decodeCombined(data, seen)
+		if c.selected != nil {
+			for key := range data {
+				if !wanted[combinedProvider(key)] {
+					delete(data, key)
+				}
+			}
+		}
+		return decodeCombined(data, wanted)
 	}
 	if len(seen) != 1 {
 		return nil, errors.New("onwatch /api/providers: missing combined provider")
 	}
-	for provider := range seen {
+	for provider := range wanted {
 		if provider == "codex" || provider == "minimax" {
 			// Single-provider current returns only one account.
 			var data struct {

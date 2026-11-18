@@ -195,6 +195,17 @@ func decodeAccounts(provider string, accounts []json.RawMessage) ([]quota.Snapsh
 	return out, nil
 }
 
+func combinedProvider(key string) string {
+	switch key {
+	case "codexAccounts":
+		return "codex"
+	case "minimaxAccounts":
+		return "minimax"
+	default:
+		return key
+	}
+}
+
 func decodeCombined(data map[string]json.RawMessage, allowed map[string]bool) ([]quota.Snapshot, error) {
 	if data == nil {
 		return nil, errSchema
@@ -205,23 +216,22 @@ func decodeCombined(data map[string]json.RawMessage, allowed map[string]bool) ([
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
+	observed := make(map[string]bool, len(allowed))
 	for _, key := range keys {
+		provider := combinedProvider(key)
+		if !allowed[provider] || observed[provider] {
+			return nil, errSchema
+		}
+		observed[provider] = true
 		var rows []quota.Snapshot
 		var err error
 		if key == "codexAccounts" || key == "minimaxAccounts" {
-			provider := key[:len(key)-len("Accounts")]
-			if !allowed[provider] || data[provider] != nil {
-				return nil, errSchema
-			}
 			var accounts []json.RawMessage
 			if json.Unmarshal(data[key], &accounts) != nil {
 				return nil, errSchema
 			}
 			rows, err = decodeAccounts(provider, accounts)
 		} else {
-			if !allowed[key] {
-				return nil, errSchema
-			}
 			rows, err = decodeProvider(key, data[key], false)
 		}
 		if err != nil {
@@ -229,8 +239,8 @@ func decodeCombined(data map[string]json.RawMessage, allowed map[string]bool) ([
 		}
 		out = append(out, rows...)
 	}
-	// Hidden providers are absent by design; never fabricate observations.
-	if len(out) == 0 {
+	// Do not return partial success if a selected provider lacks telemetry.
+	if len(out) == 0 || len(observed) != len(allowed) {
 		return nil, errUnavailable
 	}
 	return out, nil
