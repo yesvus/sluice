@@ -12,6 +12,8 @@ import (
 	sdk "github.com/coder/acp-go-sdk"
 )
 
+var errBackendLaunch = errors.New("ACP backend launch failed")
+
 type dialBackend func(context.Context, Backend) (io.ReadWriteCloser, error)
 
 type activeSession struct {
@@ -178,13 +180,14 @@ func (r *relay) newSession(ctx context.Context, params json.RawMessage) (any, *s
 func (r *relay) openSession(ctx context.Context, b Backend, init, params json.RawMessage) (*activeSession, error) {
 	stream, err := r.dial(r.ctx, b)
 	if err != nil {
-		return nil, err
+		return nil, errBackendLaunch
 	}
 	var earlyCallback atomic.Bool
-	peer := newWire(stream, func(ctx context.Context, method string, params json.RawMessage) (any, *sdk.RequestError) {
+	var peer *wire
+	peer = newWire(stream, func(ctx context.Context, method string, params json.RawMessage) (any, *sdk.RequestError) {
 		r.mu.Lock()
 		s := r.session
-		valid := !r.closing && s != nil && s.model == b.Model && sessionID(params) == s.id
+		valid := !r.closing && s != nil && s.peer == peer && sessionID(params) == s.id
 		r.mu.Unlock()
 		if !valid {
 			earlyCallback.Store(true)

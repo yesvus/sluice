@@ -95,7 +95,7 @@ func chooseAtStart[T any](ctx context.Context, allowed []Backend, patterns []str
 		if ctx.Err() != nil {
 			return Backend{}, zero, ctx.Err()
 		}
-		if errors.Is(err, ErrModelMismatch) || !usageLimit(err, patterns) {
+		if errors.Is(err, ErrModelMismatch) || errors.Is(err, errInvalidSession) || errors.Is(err, errBackendLaunch) || !usageLimit(err, patterns) {
 			return Backend{}, zero, err
 		}
 	}
