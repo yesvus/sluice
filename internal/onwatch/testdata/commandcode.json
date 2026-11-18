@@ -1,0 +1,20 @@
+{
+  "capturedAt": "2026-01-01T10:00:00Z",
+  "quotas": [
+    {
+      "name": "five_hour",
+      "utilization": 40,
+      "format": "credits",
+      "used": 4,
+      "limit": 10
+    },
+    {
+      "name": "monthly",
+      "utilization": 0,
+      "format": "currency",
+      "used": 3,
+      "limit": 0,
+      "limitUnknown": true
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "capturedAt": "2026-01-01T10:00:00Z",
+  "credits": {
+    "usage": 2,
+    "limit": 5,
+    "percent": 40,
+    "isFreeTier": true
+  }
+}

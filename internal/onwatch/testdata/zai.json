@@ -1,0 +1,20 @@
+{
+  "capturedAt": "2026-01-01T10:00:00Z",
+  "tokensLimit": {
+    "usage": 40,
+    "limit": 100,
+    "percent": 40,
+    "renewsAt": "2026-01-01T15:00:00Z",
+    "timeUntilReset": "N/A"
+  },
+  "timeLimit": {
+    "usage": 5,
+    "limit": 10,
+    "percent": 50,
+    "renewsAt": "2026-01-01T15:00:00Z",
+    "timeUntilReset": "5h"
+  },
+  "toolCalls": {
+    "usage": 17
+  }
+}

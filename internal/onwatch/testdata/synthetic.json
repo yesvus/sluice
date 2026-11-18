@@ -1,0 +1,20 @@
+{
+  "capturedAt": "2026-01-01T10:00:00Z",
+  "subscription": {
+    "usage": 60,
+    "limit": 100,
+    "percent": 60,
+    "renewsAt": "2026-01-01T15:00:00Z"
+  },
+  "search": {
+    "usage": 0,
+    "limit": 0,
+    "percent": 0
+  },
+  "toolCalls": {
+    "usage": 2,
+    "limit": 10,
+    "percent": 20,
+    "renewsAt": "2026-01-01T15:00:00Z"
+  }
+}

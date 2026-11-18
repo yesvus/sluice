@@ -1,0 +1,66 @@
+{
+  "anthropic": {
+    "capturedAt": "2026-01-01T10:00:00Z",
+    "quotas": [
+      {
+        "name": "five_hour",
+        "utilization": 25,
+        "lastUpdatedAt": "2026-01-01T09:00:00Z",
+        "resetsAt": "2026-01-01T14:00:00Z",
+        "cardPercent": 75
+      }
+    ]
+  },
+  "codexAccounts": [
+    {
+      "accountId": 101,
+      "capturedAt": "2026-01-01T10:00:00Z",
+      "quotas": [
+        {
+          "name": "five_hour",
+          "utilization": 20
+        }
+      ]
+    },
+    {
+      "accountId": 102,
+      "capturedAt": "2026-01-01T10:00:00Z",
+      "quotas": [
+        {
+          "name": "seven_day",
+          "utilization": 80
+        }
+      ]
+    }
+  ],
+  "opencode": {
+    "capturedAt": "2026-01-01T10:00:00Z",
+    "quotas": [
+      {
+        "name": "five_hour",
+        "utilization": 30,
+        "percentOnly": true,
+        "used": 0,
+        "limit": 0
+      },
+      {
+        "name": "monthly",
+        "utilization": 50,
+        "percentOnly": false,
+        "used": 5,
+        "limit": 10
+      }
+    ]
+  },
+  "antigravity": {
+    "capturedAt": "2026-01-01T10:00:00Z",
+    "quotas": [
+      {
+        "modelId": "synthetic-weekly",
+        "usagePercent": 40,
+        "remainingPercent": 60,
+        "resetTime": "2026-01-08T10:00:00Z"
+      }
+    ]
+  }
+}
