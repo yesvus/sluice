@@ -17,10 +17,6 @@ These are the project's boundary, not style preferences. A change that crosses o
 - Address review findings in the branch with a fix and, where one fits, a regression test.
 - Use the issue forms inherited from `yesvus/.github`. Do not add a local `.github/ISSUE_TEMPLATE`: it replaces the whole default set.
 
-## Agent workflow
-
-- Delegate chores (scaffolding, renames, file copies, doc lookups, mechanical edits) to a Haiku 5.5 subagent.
-
 ## Conventions
 
 - No comments unless the why is non-obvious.
