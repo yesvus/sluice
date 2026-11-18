@@ -10,6 +10,7 @@ Status: design. Nothing runs yet.
 - **Watches** quota per account through onWatch (`/api/current`, `/metrics`, webhooks), keyed by an `account_id`.
 - **Acts early**: cools a deployment when its projected usage nears its own limit, and restores it at the reported reset rather than on a fixed date.
 - **Shows** usage, headroom and resets per account in one place.
+- **Fronts ACP workers**: one ACP agent per profile that starts an allowed backend agent (Codex, OpenCode) with a pinned model and switches backends at session start by quota. See [`docs/acp-worker.md`](docs/acp-worker.md).
 
 ## What it does not do
 
