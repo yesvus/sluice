@@ -1,0 +1,49 @@
+name: sluice-litellm-control
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: litellm
+      POSTGRES_DB: litellm
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "litellm"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  fake-upstream:
+    image: python:3.13-alpine
+    command: ["python", "/app/fake_upstream.py"]
+    volumes:
+      - ./fake_upstream.py:/app/fake_upstream.py:ro
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/v1/models', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.110.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      fake-upstream:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    environment:
+      LITELLM_MASTER_KEY: sk-local-master-key
+      DATABASE_URL: postgresql://litellm:litellm@postgres:5432/litellm
+    volumes:
+      - ./litellm_config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
