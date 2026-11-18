@@ -21,7 +21,7 @@ var (
 
 type Profile struct {
 	Backends      []BackendSpec `yaml:"backends"`
-	LimitPatterns []string `yaml:"limit_patterns"`
+	LimitPatterns []string      `yaml:"limit_patterns"`
 	Limits        struct {
 		MaxTurns   int `yaml:"max_turns"`
 		MaxMinutes int `yaml:"max_minutes"`
