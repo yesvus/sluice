@@ -1,0 +1,24 @@
+{
+  "accounts": [
+    {
+      "accountId": 101,
+      "capturedAt": "2026-01-01T10:00:00Z",
+      "quotas": [
+        {
+          "name": "five_hour",
+          "utilization": 20
+        }
+      ]
+    },
+    {
+      "accountId": 102,
+      "capturedAt": "2026-01-01T10:00:00Z",
+      "quotas": [
+        {
+          "name": "seven_day",
+          "utilization": 80
+        }
+      ]
+    }
+  ]
+}
