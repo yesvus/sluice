@@ -1,6 +1,6 @@
 # ACP worker profile (pilot): `sluice/worker`
 
-Status: design, owner direction 2026-11-18. Nothing runs yet.
+Status: source pilot in review; no deployment or real account acceptance.
 
 ## Why
 
@@ -34,16 +34,18 @@ OpenHands ──ACP──> sluice acp --profile worker ──ACP──> codex-ac
     project config overrides global config. sluice therefore sets `model` and
     `small_model` through the highest-precedence mechanism the pinned OpenCode
     version supports (managed or system config), not a plain global config
-    dir, and records which one in the backend entry.
+    dir. The operator provides a read-only mount in the dedicated runtime;
+    sluice verifies it and never writes there. See [managed config contract](acp-managed-config.md).
 - After `session/new`, sluice checks the model the backend reports for the
   session against the profile. On a mismatch it ends the session with an
   error instead of relaying it (observe mode logs and ends; it does not fall
   through to another backend).
 - After choosing a backend, sluice advertises only that backend's pinned model,
-  so the Canvas dropdown offers nothing that cannot be selected. Requests to
-  switch to another model are refused.
-- Every session gets one audit line: profile, backend, model, OpenHands
-  conversation id, start, end, turns, end reason.
+  so the Canvas dropdown advertises only that model. Observe mode does not
+  refuse explicit model-change requests, and preserves the reported current
+  model in dynamic updates; refusals belong to Act.
+- Every session gets one audit line: profile, backend, initial verified model, ACP
+  client session ID, start, end, turns, end reason.
 
 ## Profile
 
@@ -59,9 +61,11 @@ profiles:
         account_id: codex-main                      # onWatch account key
       - id: opencode-go
         command: [opencode, acp]
+        home: /var/lib/sluice/homes/worker-opencode # independent operator-provisioned home
         config: managed                             # precedence mechanism used for the pin
         model: opencode-go/deepseek-v4.1-flash-1017
         account_id: opencode-go-main
+    limit_patterns: [usage limit] # synthetic example; confirm provider errors before deployment
     limits:
       max_turns: 0         # 0 = no limit during observe
       max_minutes: 0
@@ -99,5 +103,4 @@ profiles:
 - Where the binary runs: in the Tezgah Pod beside the CLIs, registered as the
   OpenHands custom agent command.
 - Until shared logins are removed from the worker runtime (ops #1108, #731), a
-  worker can still start a CLI directly; the audit makes that visible, it does
-  not prevent it.
+  worker can still start a CLI directly; sluice cannot observe or prevent that bypass.
