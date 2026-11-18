@@ -1,8 +1,11 @@
 package acp
 
 import (
+	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 )
 
@@ -27,4 +30,36 @@ func renderPinnedConfig(b BackendSpec) (string, []byte, error) {
 	default:
 		return "", nil, errProfile
 	}
+}
+
+var errPinnedConfigWrite = errors.New("cannot prepare pinned backend configuration")
+
+// writePinnedConfig atomically replaces only the owned config file in a
+// caller-provisioned private directory. It never reads existing files.
+// The caller must establish exclusive config ownership and an isolated
+// managed configuration mount before passing a root; this is not isolation.
+func writePinnedConfig(root *os.Root, b BackendSpec) error {
+	if root == nil {
+		return errPinnedConfigWrite
+	}
+	name, data, err := renderPinnedConfig(b)
+	if err != nil {
+		return err
+	}
+	temp := ".sluice-config-" + rand.Text()
+	file, err := root.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return errPinnedConfigWrite
+	}
+	defer root.Remove(temp)
+	_, writeErr := file.Write(data)
+	syncErr := file.Sync()
+	closeErr := file.Close()
+	if writeErr != nil || syncErr != nil || closeErr != nil {
+		return errPinnedConfigWrite
+	}
+	if err := root.Rename(temp, name); err != nil {
+		return errPinnedConfigWrite
+	}
+	return nil
 }
