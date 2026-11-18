@@ -11,11 +11,14 @@ import (
 	"github.com/yesvus/sluice/internal/quota"
 )
 
-var errSchema = errors.New("onwatch /api/current: unsupported or malformed quota schema")
+var (
+	errSchema      = errors.New("onwatch: unsupported or malformed quota schema")
+	errUnavailable = errors.New("onwatch: quota observation unavailable or stale")
+)
 
 func supported(provider string) bool {
 	switch provider {
-	case "anthropic", "codex", "opencode", "antigravity":
+	case "anthropic", "codex", "opencode", "antigravity", "minimax", "synthetic", "zai", "openrouter":
 		return true
 	default:
 		return false
@@ -23,9 +26,12 @@ func supported(provider string) bool {
 }
 
 type providerResponse struct {
-	CapturedAt *time.Time `json:"capturedAt"`
-	AccountID  *int64     `json:"accountId"`
-	Quotas     []quotaRow `json:"quotas"`
+	CapturedAt   *time.Time `json:"capturedAt"`
+	AccountID    *int64     `json:"accountId"`
+	Quotas       []quotaRow `json:"quotas"`
+	Paused       bool       `json:"paused"`
+	AuthRequired bool       `json:"authRequired"`
+	IsStale      bool       `json:"isStale"`
 }
 
 type quotaRow struct {
@@ -35,6 +41,9 @@ type quotaRow struct {
 	UsagePercent  *float64   `json:"usagePercent"`
 	Used          *float64   `json:"used"`
 	Limit         *float64   `json:"limit"`
+	Total         *float64   `json:"total"`
+	ResetAt       *time.Time `json:"resetAt"`
+	IsStale       bool       `json:"isStale"`
 	PercentOnly   *bool      `json:"percentOnly"`
 	ResetsAt      *time.Time `json:"resetsAt"`
 	ResetTime     *time.Time `json:"resetTime"`
@@ -42,12 +51,18 @@ type quotaRow struct {
 }
 
 func decodeProvider(provider string, data json.RawMessage, requireAccount bool) ([]quota.Snapshot, error) {
+	if provider == "synthetic" || provider == "zai" || provider == "openrouter" {
+		return decodeCounters(provider, data)
+	}
 	var response providerResponse
 	if !supported(provider) || json.Unmarshal(data, &response) != nil || response.CapturedAt == nil || response.CapturedAt.IsZero() || response.Quotas == nil {
 		return nil, errSchema
 	}
+	if response.Paused || response.AuthRequired || response.IsStale || len(response.Quotas) == 0 {
+		return nil, errUnavailable
+	}
 	account := ""
-	if provider == "codex" && response.AccountID != nil {
+	if (provider == "codex" || provider == "minimax") && response.AccountID != nil {
 		if *response.AccountID <= 0 {
 			return nil, errSchema
 		}
@@ -63,10 +78,19 @@ func decodeProvider(provider string, data json.RawMessage, requireAccount bool) 
 		if provider == "antigravity" {
 			window, percent, resets = row.ModelID, row.UsagePercent, row.ResetTime
 		}
+		if provider == "minimax" {
+			percent, resets = row.UsagePercent, row.ResetAt
+		}
+		if row.IsStale {
+			return nil, errUnavailable
+		}
 		if window == "" || windows[window] || percent == nil || *percent < 0 || math.IsNaN(*percent) || math.IsInf(*percent, 0) {
 			return nil, errSchema
 		}
 		windows[window] = true
+		if resets != nil && resets.IsZero() {
+			return nil, errSchema
+		}
 		observed := *response.CapturedAt
 		if row.LastUpdatedAt != nil {
 			if row.LastUpdatedAt.IsZero() {
@@ -87,14 +111,23 @@ func decodeProvider(provider string, data json.RawMessage, requireAccount bool) 
 				s.Used, s.Limit = row.Used, row.Limit
 			}
 		}
+		if provider == "minimax" {
+			if row.Used == nil || row.Total == nil || *row.Used < 0 || *row.Total <= 0 {
+				return nil, errUnavailable
+			}
+			s.Used, s.Limit = row.Used, row.Total
+		}
 		out = append(out, s)
 	}
 	return out, nil
 }
 
-func decodeAccounts(accounts []json.RawMessage) ([]quota.Snapshot, error) {
+func decodeAccounts(provider string, accounts []json.RawMessage) ([]quota.Snapshot, error) {
 	if accounts == nil {
 		return nil, errSchema
+	}
+	if len(accounts) == 0 {
+		return nil, errUnavailable
 	}
 	out := []quota.Snapshot{}
 	seen := map[int64]bool{}
@@ -106,7 +139,7 @@ func decodeAccounts(accounts []json.RawMessage) ([]quota.Snapshot, error) {
 			return nil, errSchema
 		}
 		seen[*envelope.ID] = true
-		rows, err := decodeProvider("codex", account, true)
+		rows, err := decodeProvider(provider, account, true)
 		if err != nil {
 			return nil, err
 		}
@@ -128,15 +161,16 @@ func decodeCombined(data map[string]json.RawMessage, allowed map[string]bool) ([
 	for _, key := range keys {
 		var rows []quota.Snapshot
 		var err error
-		if key == "codexAccounts" {
-			if !allowed["codex"] || data["codex"] != nil {
+		if key == "codexAccounts" || key == "minimaxAccounts" {
+			provider := key[:len(key)-len("Accounts")]
+			if !allowed[provider] || data[provider] != nil {
 				return nil, errSchema
 			}
 			var accounts []json.RawMessage
 			if json.Unmarshal(data[key], &accounts) != nil {
 				return nil, errSchema
 			}
-			rows, err = decodeAccounts(accounts)
+			rows, err = decodeAccounts(provider, accounts)
 		} else {
 			if !allowed[key] {
 				return nil, errSchema
@@ -148,6 +182,9 @@ func decodeCombined(data map[string]json.RawMessage, allowed map[string]bool) ([
 		}
 		out = append(out, rows...)
 	}
-	// Hidden/no-data providers must not turn into zero utilization samples.
+	// Hidden providers are absent by design; never fabricate observations.
+	if len(out) == 0 {
+		return nil, errUnavailable
+	}
 	return out, nil
 }

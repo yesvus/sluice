@@ -1,0 +1,35 @@
+{
+  "accounts": [
+    {
+      "accountId": 103,
+      "capturedAt": "2026-01-01T10:00:00Z",
+      "quotas": [
+        {
+          "name": "synthetic-pool",
+          "used": 20,
+          "total": 100,
+          "usagePercent": 20,
+          "resetAt": "2026-01-01T15:00:00Z"
+        },
+        {
+          "name": "wkly_synthetic-pool",
+          "used": 80,
+          "total": 200,
+          "usagePercent": 40
+        }
+      ]
+    },
+    {
+      "accountId": 104,
+      "capturedAt": "2026-01-01T10:00:00Z",
+      "quotas": [
+        {
+          "name": "synthetic-pool",
+          "used": 10,
+          "total": 100,
+          "usagePercent": 10
+        }
+      ]
+    }
+  ]
+}

@@ -159,15 +159,19 @@ func (c *Client) Current(ctx context.Context) ([]quota.Snapshot, error) {
 		return nil, errors.New("onwatch /api/providers: missing combined provider")
 	}
 	for provider := range seen {
-		if provider == "codex" {
+		if provider == "codex" || provider == "minimax" {
 			// Single-provider current returns only one account.
 			var data struct {
 				Accounts []json.RawMessage `json:"accounts"`
 			}
-			if err := c.get(ctx, "/api/codex/usage", url.Values{"all": {"true"}}, &data); err != nil {
+			endpoint, query := "/api/codex/usage", url.Values{"all": {"true"}}
+			if provider == "minimax" {
+				endpoint, query = "/api/minimax/accounts/usage", nil
+			}
+			if err := c.get(ctx, endpoint, query, &data); err != nil {
 				return nil, err
 			}
-			return decodeAccounts(data.Accounts)
+			return decodeAccounts(provider, data.Accounts)
 		}
 		var data json.RawMessage
 		if err := c.get(ctx, "/api/current", url.Values{"provider": {provider}}, &data); err != nil {
