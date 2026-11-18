@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -48,7 +47,11 @@ func run(args []string) error {
 	}
 }
 
-func serve(args []string) error {
+type serveOptions struct {
+	listen, config, onwatchURL string
+}
+
+func parseServeOptions(args []string) (serveOptions, error) {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	listen := fs.String("listen", envOrDefault("SLUICE_LISTEN", defaultListen), "address to listen on")
 	config := fs.String("config", envOrDefault("SLUICE_CONFIG", defaultConfigPath), "path to local config file")
@@ -57,17 +60,29 @@ func serve(args []string) error {
 	onwatchURL := fs.String("onwatch-url", defaultOnwatchURL, "onWatch base URL")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return nil
+			return serveOptions{}, flag.ErrHelp
 		}
-		return err
+		return serveOptions{}, errors.New("serve: invalid flags")
 	}
 	if fs.NArg() > 0 {
-		return fmt.Errorf("serve: unexpected arguments: %s", strings.Join(fs.Args(), " "))
+		return serveOptions{}, errors.New("serve: unexpected positional arguments")
 	}
 	if !flagWasSet(fs, "onwatch-url") {
 		if env := os.Getenv("SLUICE_ONWATCH_URL"); env != "" {
 			*onwatchURL = env
 		}
+	}
+
+	return serveOptions{listen: *listen, config: *config, onwatchURL: *onwatchURL}, nil
+}
+
+func serve(args []string) error {
+	opts, err := parseServeOptions(args)
+	if errors.Is(err, flag.ErrHelp) {
+		return nil
+	}
+	if err != nil {
+		return err
 	}
 
 	mux := http.NewServeMux()
@@ -78,12 +93,12 @@ func serve(args []string) error {
 	mux.HandleFunc("POST /hooks/onwatch", webhook.Handler)
 
 	srv := &http.Server{
-		Addr:              *listen,
+		Addr:              opts.listen,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	log.Printf("sluice serve listen=%s config=%s onwatch=%s", *listen, *config, redactURL(*onwatchURL))
+	log.Printf("sluice serve listen=%s config=%s onwatch=%s", opts.listen, opts.config, redactURL(opts.onwatchURL))
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -134,9 +149,8 @@ func flagWasSet(fs *flag.FlagSet, name string) bool {
 
 func redactURL(raw string) string {
 	parsed, err := url.Parse(raw)
-	if err != nil {
+	if err != nil || parsed.Opaque != "" || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return "<unparseable-url>"
 	}
-	parsed.User = nil
-	return parsed.String()
+	return (&url.URL{Scheme: parsed.Scheme, Host: parsed.Host}).String()
 }
