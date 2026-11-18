@@ -1,3 +1,2 @@
-// Package registry holds the account registry types. Loading from config is
-// implemented in #4; until then Load reports errors.ErrUnsupported.
+// Package registry holds and validates non-secret account configuration.
 package registry
