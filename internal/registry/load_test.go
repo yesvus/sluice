@@ -92,7 +92,7 @@ func TestThresholdOne(t *testing.T) {
 }
 
 func TestBadConfig(t *testing.T) {
-	for _, data := range []string{"", "accounts: null", "accounts: [", "accounts: "+strings.Repeat(" ", maxRegistryBytes)} {
+	for _, data := range []string{"", "accounts: null", "accounts: [", "accounts: " + strings.Repeat(" ", maxRegistryBytes)} {
 		if r, err := Load(writeConfig(t, data)); r != nil || err == nil {
 			t.Fatal("invalid config accepted")
 		}
