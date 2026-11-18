@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	sdk "github.com/coder/acp-go-sdk"
@@ -21,6 +20,7 @@ type activeSession struct {
 	id       string
 	response json.RawMessage
 	model    string
+	early    *startupUpdates
 }
 
 func (s *activeSession) ReportedModel() string { return s.model }
@@ -29,6 +29,7 @@ func (s *activeSession) Close() error          { return s.peer.Close() }
 type relay struct {
 	ctx         context.Context
 	front       *wire
+	publication *publicationStream
 	dial        dialBackend
 	profile     string
 	backends    []Backend
@@ -51,7 +52,8 @@ func runRelay(ctx context.Context, client io.ReadWriteCloser, profile string, al
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	r := &relay{ctx: ctx, dial: dial, profile: profile, backends: allowed, patterns: patterns, backendDone: make(chan struct{})}
-	r.front = newWire(client, r.handle)
+	r.publication = &publicationStream{ReadWriteCloser: client}
+	r.front = newWire(r.publication, r.handle)
 	r.front.activate()
 	reason := "client_closed"
 	select {
@@ -142,6 +144,9 @@ func (r *relay) handle(ctx context.Context, method string, params json.RawMessag
 		}()
 	}
 	result, err := s.peer.call(ctx, method, params)
+	if err == nil && (method == "session/set_config_option" || method == "session/set_model" || method == "session/set_mode") {
+		result, err = projectConfigResponse(result, s.model)
+	}
 	return result, protocolError(err)
 }
 
@@ -185,6 +190,32 @@ func (r *relay) newSession(ctx context.Context, params json.RawMessage) (any, *s
 		_ = s.Close()
 		return nil, sdk.NewRequestCancelled(nil)
 	}
+	s.early.mu.Lock()
+	if s.early.invalid {
+		s.early.mu.Unlock()
+		_ = s.Close()
+		return nil, sdk.NewInternalError(nil)
+	}
+	for _, update := range s.early.items {
+		if sessionID(update) != s.id {
+			s.early.mu.Unlock()
+			_ = s.Close()
+			return nil, sdk.NewInternalError(nil)
+		}
+	}
+	r.publication.expect(s.id)
+	for _, update := range s.early.items {
+		projected, err := projectUpdate(update, s.model)
+		if err != nil || r.front.notify(ctx, "session/update", projected) != nil {
+			s.early.mu.Unlock()
+			_ = s.Close()
+			// A partial unpublished buffer cannot be reused for another session.
+			_ = r.front.Close()
+			return nil, sdk.NewInternalError(nil)
+		}
+	}
+	s.early.items = nil
+	s.early.mu.Unlock()
 	r.session = s
 	r.audit = Audit{Profile: r.profile, Backend: chosen.ID, Model: chosen.Model, ClientSessionID: s.id, Start: started}
 	go func() {
@@ -199,16 +230,32 @@ func (r *relay) openSession(ctx context.Context, b Backend, init, params json.Ra
 	if err != nil {
 		return nil, launchReason(err)
 	}
-	var earlyCallback atomic.Bool
+	early := &startupUpdates{}
 	var peer *wire
 	peer = newWire(stream, func(ctx context.Context, method string, params json.RawMessage) (any, *sdk.RequestError) {
 		r.mu.Lock()
 		s := r.session
 		valid := !r.closing && s != nil && s.peer == peer && sessionID(params) == s.id
-		r.mu.Unlock()
 		if !valid {
-			earlyCallback.Store(true)
-			return nil, sdk.NewInvalidRequest(nil)
+			early.mu.Lock()
+			defer early.mu.Unlock()
+			defer r.mu.Unlock()
+			// Do not forward calls with side effects before a session is chosen.
+			if r.closing || s != nil || method != "session/update" || sessionID(params) == "" || early.invalid || len(early.items) >= maxStartupUpdates || early.size+len(params) > maxStartupBytes {
+				early.invalid = true
+				return nil, sdk.NewInvalidRequest(nil)
+			}
+			early.items = append(early.items, append(json.RawMessage(nil), params...))
+			early.size += len(params)
+			return nil, nil
+		}
+		r.mu.Unlock()
+		if method == "session/update" {
+			projected, err := projectUpdate(params, s.model)
+			if err != nil {
+				return nil, protocolError(err)
+			}
+			params = projected
 		}
 		return r.callback(ctx, method, params)
 	})
@@ -237,11 +284,14 @@ func (r *relay) openSession(ctx context.Context, b Backend, init, params json.Ra
 	if err != nil {
 		return nil, err
 	}
-	if earlyCallback.Load() {
+	early.mu.Lock()
+	invalid := early.invalid
+	early.mu.Unlock()
+	if invalid {
 		return nil, errInvalidSession
 	}
 	keep = true
-	return &activeSession{peer: peer, id: id, response: projected, model: b.Model}, nil
+	return &activeSession{peer: peer, id: id, response: projected, model: b.Model, early: early}, nil
 }
 
 func (r *relay) callback(ctx context.Context, method string, params json.RawMessage) (any, *sdk.RequestError) {
