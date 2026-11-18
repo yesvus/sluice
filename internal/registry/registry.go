@@ -24,6 +24,11 @@ type Registry struct {
 	accounts []Account
 }
 
+// New returns a registry holding a copy of accounts. It does not validate; Load does.
+func New(accounts []Account) *Registry {
+	return &Registry{accounts: cloneAccounts(accounts)}
+}
+
 // Load is a stub until #4 implements config parsing.
 func Load(path string) (*Registry, error) {
 	return nil, errors.ErrUnsupported
@@ -33,13 +38,26 @@ func Load(path string) (*Registry, error) {
 func (r *Registry) Lookup(provider, onwatchKey string) (Account, bool) {
 	for _, account := range r.accounts {
 		if account.Provider == provider && account.OnwatchKey == onwatchKey {
-			return account, true
+			return cloneAccount(account), true
 		}
 	}
 	return Account{}, false
 }
 
-// Accounts returns every configured account.
+// Accounts returns a copy of every configured account.
 func (r *Registry) Accounts() []Account {
-	return r.accounts
+	return cloneAccounts(r.accounts)
+}
+
+func cloneAccounts(accounts []Account) []Account {
+	out := make([]Account, len(accounts))
+	for i, account := range accounts {
+		out[i] = cloneAccount(account)
+	}
+	return out
+}
+
+func cloneAccount(account Account) Account {
+	account.Deployments = append([]string(nil), account.Deployments...)
+	return account
 }
