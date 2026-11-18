@@ -1,7 +1,6 @@
 package registry
 
 import (
-	"errors"
 	"testing"
 )
 
@@ -71,11 +70,5 @@ func TestLookup(t *testing.T) {
 	}
 	if _, ok := r.Lookup("wrong-provider", "key-1"); ok {
 		t.Fatal("Lookup with a wrong provider should miss")
-	}
-}
-
-func TestLoadReturnsErrUnsupported(t *testing.T) {
-	if _, err := Load("registry.yaml"); !errors.Is(err, errors.ErrUnsupported) {
-		t.Fatalf("Load() error = %v, want errors.ErrUnsupported", err)
 	}
 }

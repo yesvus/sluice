@@ -1,0 +1,23 @@
+# Synthetic examples only. Real account config belongs in config.local.yaml.
+# Provider credentials remain in LiteLLM or the official agent CLI.
+accounts:
+  - id: fixture-router-free
+    provider: openrouter
+    onwatch_key: ""
+    kind: free_tier
+    tier: free
+    deployments: [fixture-free-model]
+    threshold: 0.9
+  - id: fixture-api-cheap
+    provider: synthetic
+    onwatch_key: ""
+    kind: api_key
+    tier: cheap
+    deployments: [fixture-cheap-model]
+    threshold: 0.8
+  - id: fixture-codex-display
+    provider: codex
+    onwatch_key: "101"
+    kind: subscription_observed
+    tier: frontier
+    deployments: []

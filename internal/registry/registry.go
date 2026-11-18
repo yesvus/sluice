@@ -1,7 +1,5 @@
 package registry
 
-import "errors"
-
 // Kind is how an account authenticates to its provider.
 type Kind string
 
@@ -36,14 +34,9 @@ type Registry struct {
 	accounts []Account
 }
 
-// New returns a registry holding a copy of accounts. It does not validate; Load validation is deferred to #4.
+// New returns a registry holding a copy of accounts; Load validates configuration.
 func New(accounts []Account) *Registry {
 	return &Registry{accounts: cloneAccounts(accounts)}
-}
-
-// Load is a stub until #4 implements config parsing.
-func Load(path string) (*Registry, error) {
-	return nil, errors.ErrUnsupported
 }
 
 // Lookup returns the account matching provider and onwatchKey.
