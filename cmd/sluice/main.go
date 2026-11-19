@@ -33,7 +33,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: sluice <version|serve> [options]")
+		return errors.New("usage: sluice <version|serve|acp> [options]")
 	}
 
 	switch args[0] {
@@ -42,6 +42,8 @@ func run(args []string) error {
 		return nil
 	case "serve":
 		return serve(args[1:])
+	case "acp":
+		return runACP(args[1:])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}

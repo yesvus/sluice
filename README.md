@@ -2,7 +2,7 @@
 
 Quota-aware routing for LLM API traffic. sluice sits in front of [LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy) and uses [onWatch](https://github.com/onllm-dev/onwatch) quota data to take a deployment out before it hits its limit and to bring it back when its quota resets, instead of reacting only after a 429.
 
-Status: design. Nothing runs yet.
+Status: ACP observe-mode pilot in development; no production deployment.
 
 ## What it does
 
@@ -40,6 +40,38 @@ onWatch runs separately, under the operator's own credentials, and is not bundle
 1. **Observe**: ingest onWatch data per `account_id`, export it, no routing effect.
 2. **Calibrate**: compare onWatch's view with real 429 and quota errors.
 3. **Act**: drive LiteLLM cooldowns and weights from it.
+
+## ACP worker pilot
+
+Build with Go 1.25 using `make build`. The ACP command uses stdin/stdout for protocol traffic and stderr for content-free JSON session audit records. Use an operator-controlled profile file outside the launch working directory; select it with an absolute `--config` or `SLUICE_CONFIG`, defaulting to `/etc/sluice/profiles.yaml`. The launcher rejects workspace-local configs (including resolved symlinks), nonregular files, and group/world-writable files. The runtime must protect the file and its parent directory from task writes; these checks do not establish that boundary.
+
+Synthetic example (not a live account or usable model):
+
+```yaml
+profiles:
+  worker:
+    backends:
+      - id: synthetic-codex
+        command: [codex-acp]
+        home: /private/synthetic-codex
+        model: example-a
+        effort: high
+      - id: synthetic-opencode
+        command: [opencode, acp]
+        home: /private/synthetic-opencode
+        config: managed
+        model: example/example-b
+    limit_patterns: [usage limit]
+    limits:
+      max_turns: 0
+      max_minutes: 0
+```
+
+```sh
+./bin/sluice acp --profile worker --config /private/synthetic-profile.yaml
+```
+
+OpenCode launch requires a dedicated operator-provisioned Linux runtime with a read-only profile-specific mount at `/etc/opencode` (see [managed config contract](docs/acp-managed-config.md)); otherwise it fails closed. The runtime contract and real CLI precedence are not yet verified on Tezgah. Do not run it against real accounts during verification; `make check` uses fake ACP peers and a synthetic subprocess. Codex launch requires an operator-provisioned dedicated private home, with the official CLI login already provisioned independently. Sluice writes only its owned `config.toml`; do not point it at an existing personal home. Its child environment is explicit rather than inherited, so provider tokens, `CODEX_CONFIG` and `MODEL_PROVIDER` are not copied. The surrounding operator runtime must supply executable/workspace/process isolation and independent credential custody; the launcher itself is not a security boundary. Startup quota fallback matches only explicit backend error messages, never opaque SDK error data or local failures. Real provider error-message patterns remain unverified. No turn/time limits are enforced in observe mode.
 
 ## Contributing
 
