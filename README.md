@@ -18,6 +18,7 @@ These are the project's boundary, not a roadmap gap.
 
 - It does not read, store or replay subscription OAuth tokens (Claude Pro/Max, ChatGPT Plus/Pro and similar). Subscriptions stay with their official clients; sluice can display their usage as reported by onWatch, and that is all.
 - It does not pool quota across accounts or rotate accounts to get past one account's limit. Each account is used within its own limits; when it is exhausted, traffic to it stops.
+- It does not hold several accounts of one provider. It chooses between providers and their models, and follows each provider's terms of service.
 - It does not spill a free route into a paid one. The caller chooses the tier.
 
 ## Architecture

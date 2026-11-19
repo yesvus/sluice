@@ -9,6 +9,7 @@ These are the project's boundary, not style preferences. A change that crosses o
 - sluice never reads, stores or replays a subscription OAuth token. Subscriptions are used by their own official clients; sluice only observes their usage through onwatch.
 - What sluice routes is API keys, OpenRouter and free tiers, through LiteLLM, and ACP worker sessions across the backends a profile lists (`docs/acp-worker.md`). For ACP, sluice starts the official agent CLI and relays the session; it never touches that CLI's credentials.
 - Each account is used within its own limits. Routing never rotates accounts to get past one account's limit.
+- One account per provider in a profile. Sluice chooses between providers and their models, never between accounts of the same provider, at any time and not only at a limit. Where a provider's terms are stricter, they apply (yesvus/ops `decisions/2026-11-19-sluice-provider-selection-tos.md`).
 - A free route never spills to a paid one; the caller chooses the tier.
 
 ## Process
